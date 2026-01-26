@@ -56,11 +56,11 @@ def crea_template_incassi():
     """Crea il template CSV per gli incassi"""
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['nome', 'cognome', 'iban', 'importo', 'causale', 'data_scadenza'])
-    writer.writerow(['Mario', 'Rossi', 'IT60X0542811101000000654321', '150.00', 
-                    'Pagamento servizio gennaio 2025', '2025-02-15'])
-    writer.writerow(['Laura', 'Bianchi', 'IT28W8000000292100645211111', '250.50', 
-                    'Abbonamento annuale', '2025-02-20'])
+    writer.writerow(['nome', 'cognome', 'codice_fiscale', 'indirizzo', 'cap', 'citta', 'provincia', 'paese', 'iban', 'bic', 'importo', 'causale', 'data_scadenza', 'data_firma_mandato'])
+    writer.writerow(['Mario', 'Rossi', 'RSSMRA80A01H501Z', 'Via Roma 123', '20100', 'Milano', 'MI', 'IT', 'IT60X0542811101000000654321', 'BPMOIT22XXX', '150.00', 
+                    'Pagamento servizio gennaio 2025', '2025-02-15', '2024-01-15'])
+    writer.writerow(['Laura', 'Bianchi', 'BNCLRA85M45F205Y', 'Corso Italia 45', '00100', 'Roma', 'RM', 'IT', 'IT28W8000000292100645211111', 'UNCRITMM', '250.50', 
+                    'Abbonamento annuale', '2025-02-20', '2024-02-10'])
     return output.getvalue()
 
 def valida_dati_aziendali(df):
@@ -75,7 +75,7 @@ def valida_dati_aziendali(df):
 
 def valida_incassi(df):
     """Valida i dati degli incassi"""
-    required_fields = ['nome', 'cognome', 'iban', 'importo', 'causale', 'data_scadenza']
+    required_fields = ['nome', 'cognome', 'codice_fiscale', 'indirizzo', 'cap', 'citta', 'provincia', 'paese', 'iban', 'bic', 'importo', 'causale', 'data_scadenza', 'data_firma_mandato']
     for field in required_fields:
         if field not in df.columns:
             return False, f"Campo mancante: {field}"
@@ -176,21 +176,41 @@ def genera_xml_sepa(dati_aziendali, incassi):
         drct_dbt_tx = SubElement(drct_dbt_tx_inf, 'DrctDbtTx')
         mndt_rltd_inf = SubElement(drct_dbt_tx, 'MndtRltdInf')
         SubElement(mndt_rltd_inf, 'MndtId').text = genera_mandate_id(idx)
-        SubElement(mndt_rltd_inf, 'DtOfSgntr').text = '2024-01-01'
+        SubElement(mndt_rltd_inf, 'DtOfSgntr').text = incasso['data_firma_mandato']
         
         # Debtor Agent
         dbtr_agt = SubElement(drct_dbt_tx_inf, 'DbtrAgt')
         dbtr_fin_instn_id = SubElement(dbtr_agt, 'FinInstnId')
-        SubElement(dbtr_fin_instn_id, 'BIC').text = 'NOTPROVIDED'
+        
+        # Usa il BIC se fornito, altrimenti NOTPROVIDED
+        bic_value = incasso.get('bic', '').strip()
+        if bic_value and bic_value.upper() != 'NOTPROVIDED':
+            SubElement(dbtr_fin_instn_id, 'BIC').text = bic_value
+        else:
+            SubElement(dbtr_fin_instn_id, 'BIC').text = 'NOTPROVIDED'
         
         # Debtor
         dbtr = SubElement(drct_dbt_tx_inf, 'Dbtr')
         SubElement(dbtr, 'Nm').text = f"{incasso['nome']} {incasso['cognome']}"
         
+        # Debtor Postal Address
+        pstl_adr = SubElement(dbtr, 'PstlAdr')
+        SubElement(pstl_adr, 'Ctry').text = incasso['paese']
+        adr_line1 = SubElement(pstl_adr, 'AdrLine')
+        adr_line1.text = incasso['indirizzo']
+        adr_line2 = SubElement(pstl_adr, 'AdrLine')
+        adr_line2.text = f"{incasso['cap']} {incasso['citta']} ({incasso['provincia']})"
+        
+        # Debtor Identification
+        dbtr_id_elem = SubElement(dbtr, 'Id')
+        orgn_id = SubElement(dbtr_id_elem, 'OrgId')
+        othr_id = SubElement(orgn_id, 'Othr')
+        SubElement(othr_id, 'Id').text = incasso['codice_fiscale']
+        
         # Debtor Account
         dbtr_acct = SubElement(drct_dbt_tx_inf, 'DbtrAcct')
-        dbtr_id = SubElement(dbtr_acct, 'Id')
-        SubElement(dbtr_id, 'IBAN').text = pulisci_iban(incasso['iban'])
+        dbtr_acct_id = SubElement(dbtr_acct, 'Id')
+        SubElement(dbtr_acct_id, 'IBAN').text = pulisci_iban(incasso['iban'])
         
         # Remittance Information
         rmt_inf = SubElement(drct_dbt_tx_inf, 'RmtInf')
