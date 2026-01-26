@@ -1,278 +1,153 @@
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+import streamlit as st
 import csv
 from datetime import datetime
-import os
+import io
 
-class SDDXMLGenerator:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Generatore XML SEPA SDD")
-        self.root.geometry("800x700")
+st.set_page_config(
+    page_title="Generatore XML SEPA SDD",
+    page_icon="💶",
+    layout="wide"
+)
+
+# Inizializza session state
+if 'company_data' not in st.session_state:
+    st.session_state.company_data = {
+        'nome_azienda': '',
+        'iban': '',
+        'creditor_id': ''
+    }
+if 'csv_data' not in st.session_state:
+    st.session_state.csv_data = []
+
+# Header
+st.title("💶 Generatore XML SEPA SDD")
+st.markdown("### Genera file XML per incassi SDD da caricare su home banking")
+st.divider()
+
+# Sezione 1: Dati Aziendali
+st.header("1️⃣ Dati Aziendali")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("📥 Scarica Template Dati Aziendali", type="primary"):
+        template_content = "campo,valore\n"
+        template_content += "nome_azienda,NOME_AZIENDA_DA_MODIFICARE\n"
+        template_content += "iban,IT00A0000000000000000000000\n"
+        template_content += "creditor_id,IT00ZZZ000000000000"
         
-        self.company_data = {
-            'nome_azienda': '',
-            'iban': '',
-            'creditor_id': ''
-        }
-        self.csv_data = []
-        
-        self.setup_ui()
-    
-    def setup_ui(self):
-        # Header
-        header = tk.Frame(self.root, bg='#1e3a8a', pady=20)
-        header.pack(fill='x')
-        
-        tk.Label(
-            header, 
-            text="Generatore XML SEPA SDD", 
-            font=('Arial', 20, 'bold'),
-            bg='#1e3a8a',
-            fg='white'
-        ).pack()
-        
-        tk.Label(
-            header,
-            text="Genera file XML per incassi SDD da caricare su home banking",
-            font=('Arial', 10),
-            bg='#1e3a8a',
-            fg='#bfdbfe'
-        ).pack()
-        
-        # Main container
-        main = tk.Frame(self.root, padx=20, pady=20)
-        main.pack(fill='both', expand=True)
-        
-        # Sezione 1: Dati Aziendali
-        section1 = tk.LabelFrame(main, text="1. Dati Aziendali", font=('Arial', 12, 'bold'), padx=15, pady=15)
-        section1.pack(fill='x', pady=(0, 15))
-        
-        tk.Button(
-            section1,
-            text="📥 Scarica Template Dati Aziendali",
-            command=self.download_company_template,
-            bg='#3b82f6',
-            fg='white',
-            font=('Arial', 10),
-            cursor='hand2',
-            relief='flat',
-            padx=10,
-            pady=8
-        ).pack(anchor='w', pady=(0, 10))
-        
-        tk.Button(
-            section1,
-            text="📂 Carica CSV Dati Aziendali",
-            command=self.load_company_data,
-            bg='#6366f1',
-            fg='white',
-            font=('Arial', 10),
-            cursor='hand2',
-            relief='flat',
-            padx=10,
-            pady=8
-        ).pack(anchor='w', pady=(0, 10))
-        
-        self.company_info_label = tk.Label(section1, text="Nessun dato caricato", fg='#6b7280', font=('Arial', 9))
-        self.company_info_label.pack(anchor='w')
-        
-        # Sezione 2: CSV Incassi
-        section2 = tk.LabelFrame(main, text="2. CSV Incassi", font=('Arial', 12, 'bold'), padx=15, pady=15)
-        section2.pack(fill='x', pady=(0, 15))
-        
-        tk.Button(
-            section2,
-            text="📥 Scarica Template CSV Incassi",
-            command=self.download_csv_template,
-            bg='#8b5cf6',
-            fg='white',
-            font=('Arial', 10),
-            cursor='hand2',
-            relief='flat',
-            padx=10,
-            pady=8
-        ).pack(anchor='w', pady=(0, 10))
-        
-        tk.Button(
-            section2,
-            text="📂 Carica CSV Incassi",
-            command=self.load_csv_data,
-            bg='#a855f7',
-            fg='white',
-            font=('Arial', 10),
-            cursor='hand2',
-            relief='flat',
-            padx=10,
-            pady=8
-        ).pack(anchor='w', pady=(0, 10))
-        
-        self.csv_info_label = tk.Label(section2, text="Nessun CSV caricato", fg='#6b7280', font=('Arial', 9))
-        self.csv_info_label.pack(anchor='w')
-        
-        # Sezione 3: Genera XML
-        section3 = tk.LabelFrame(main, text="3. Genera XML", font=('Arial', 12, 'bold'), padx=15, pady=15)
-        section3.pack(fill='x', pady=(0, 15))
-        
-        self.generate_btn = tk.Button(
-            section3,
-            text="✅ Genera e Scarica XML SEPA SDD",
-            command=self.generate_xml,
-            bg='#10b981',
-            fg='white',
-            font=('Arial', 12, 'bold'),
-            cursor='hand2',
-            relief='flat',
-            padx=15,
-            pady=12,
-            state='disabled'
+        st.download_button(
+            label="💾 Clicca per scaricare",
+            data=template_content,
+            file_name="template_dati_aziendali.csv",
+            mime="text/csv"
         )
-        self.generate_btn.pack()
-        
-        # Note
-        note_frame = tk.Frame(main, bg='#f3f4f6', relief='solid', borderwidth=1)
-        note_frame.pack(fill='x', pady=(10, 0))
-        
-        tk.Label(
-            note_frame,
-            text="Note:",
-            font=('Arial', 9, 'bold'),
-            bg='#f3f4f6',
-            anchor='w'
-        ).pack(fill='x', padx=10, pady=(10, 5))
-        
-        notes = [
-            "• Formato CSV: nome, cognome, iban, importo, causale, data_scadenza",
-            "• Date in formato YYYY-MM-DD (es. 2024-02-15)",
-            "• Importo con punto decimale (es. 100.50)",
-            "• XML compatibile con standard SEPA pain.008.001.02"
-        ]
-        
-        for note in notes:
-            tk.Label(
-                note_frame,
-                text=note,
-                font=('Arial', 8),
-                bg='#f3f4f6',
-                anchor='w',
-                fg='#4b5563'
-            ).pack(fill='x', padx=10)
-        
-        tk.Label(note_frame, text="", bg='#f3f4f6').pack(pady=5)
+
+with col2:
+    company_file = st.file_uploader(
+        "📂 Carica CSV Dati Aziendali",
+        type=['csv'],
+        key="company_uploader"
+    )
     
-    def download_company_template(self):
-        content = "campo,valore\n"
-        content += "nome_azienda,NOME_AZIENDA_DA_MODIFICARE\n"
-        content += "iban,IT00A0000000000000000000000\n"
-        content += "creditor_id,IT00ZZZ000000000000"
-        
-        filepath = filedialog.asksaveasfilename(
-            defaultextension=".csv",
-            filetypes=[("CSV files", "*.csv")],
-            initialfile="template_dati_aziendali.csv"
-        )
-        
-        if filepath:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(content)
-            messagebox.showinfo("Successo", "Template dati aziendali scaricato!")
-    
-    def download_csv_template(self):
-        content = "nome,cognome,iban,importo,causale,data_scadenza\n"
-        content += "Mario,Rossi,IT60X0542811101000000123456,100.50,Pagamento fattura 001,2024-02-15\n"
-        content += "Laura,Bianchi,IT28W8000000292100645211208,250.00,Abbonamento mensile,2024-02-15"
-        
-        filepath = filedialog.asksaveasfilename(
-            defaultextension=".csv",
-            filetypes=[("CSV files", "*.csv")],
-            initialfile="template_incassi_sdd.csv"
-        )
-        
-        if filepath:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(content)
-            messagebox.showinfo("Successo", "Template CSV incassi scaricato!")
-    
-    def load_company_data(self):
-        filepath = filedialog.askopenfilename(
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
-        )
-        
-        if not filepath:
-            return
-        
+    if company_file is not None:
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    campo = row.get('campo', '').strip()
-                    valore = row.get('valore', '').strip()
-                    
-                    if campo == 'nome_azienda':
-                        self.company_data['nome_azienda'] = valore
-                    elif campo == 'iban':
-                        self.company_data['iban'] = valore
-                    elif campo == 'creditor_id':
-                        self.company_data['creditor_id'] = valore
+            content = company_file.read().decode('utf-8')
+            reader = csv.DictReader(io.StringIO(content))
             
-            info_text = f"✓ Dati caricati:\n"
-            info_text += f"  Azienda: {self.company_data['nome_azienda']}\n"
-            info_text += f"  IBAN: {self.company_data['iban']}\n"
-            info_text += f"  Creditor ID: {self.company_data['creditor_id']}"
+            for row in reader:
+                campo = row.get('campo', '').strip()
+                valore = row.get('valore', '').strip()
+                
+                if campo == 'nome_azienda':
+                    st.session_state.company_data['nome_azienda'] = valore
+                elif campo == 'iban':
+                    st.session_state.company_data['iban'] = valore
+                elif campo == 'creditor_id':
+                    st.session_state.company_data['creditor_id'] = valore
             
-            self.company_info_label.config(text=info_text, fg='#059669')
-            self.check_can_generate()
-            messagebox.showinfo("Successo", "Dati aziendali caricati correttamente!")
-            
+            st.success("✅ Dati aziendali caricati!")
         except Exception as e:
-            messagebox.showerror("Errore", f"Errore nel caricamento del file:\n{str(e)}")
-    
-    def load_csv_data(self):
-        if not self.company_data['nome_azienda']:
-            messagebox.showwarning("Attenzione", "Carica prima i dati aziendali!")
-            return
+            st.error(f"❌ Errore nel caricamento: {str(e)}")
+
+# Mostra dati caricati
+if st.session_state.company_data['nome_azienda']:
+    st.info(f"""
+    **Dati caricati:**
+    - **Azienda:** {st.session_state.company_data['nome_azienda']}
+    - **IBAN:** {st.session_state.company_data['iban']}
+    - **Creditor ID:** {st.session_state.company_data['creditor_id']}
+    """)
+
+st.divider()
+
+# Sezione 2: CSV Incassi
+st.header("2️⃣ CSV Incassi")
+
+col3, col4 = st.columns(2)
+
+with col3:
+    if st.button("📥 Scarica Template CSV Incassi", type="primary"):
+        template_csv = "nome,cognome,iban,importo,causale,data_scadenza\n"
+        template_csv += "Mario,Rossi,IT60X0542811101000000123456,100.50,Pagamento fattura 001,2024-02-15\n"
+        template_csv += "Laura,Bianchi,IT28W8000000292100645211208,250.00,Abbonamento mensile,2024-02-15"
         
-        filepath = filedialog.askopenfilename(
-            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        st.download_button(
+            label="💾 Clicca per scaricare",
+            data=template_csv,
+            file_name="template_incassi_sdd.csv",
+            mime="text/csv"
         )
-        
-        if not filepath:
-            return
-        
+
+with col4:
+    csv_file = st.file_uploader(
+        "📂 Carica CSV Incassi",
+        type=['csv'],
+        key="csv_uploader",
+        disabled=not st.session_state.company_data['nome_azienda']
+    )
+    
+    if csv_file is not None:
         try:
-            self.csv_data = []
-            with open(filepath, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    self.csv_data.append(row)
+            content = csv_file.read().decode('utf-8')
+            reader = csv.DictReader(io.StringIO(content))
+            st.session_state.csv_data = list(reader)
             
-            total = sum(float(row.get('importo', 0)) for row in self.csv_data)
-            info_text = f"✓ Incassi caricati: {len(self.csv_data)}\n"
-            info_text += f"  Importo totale: € {total:.2f}"
-            
-            self.csv_info_label.config(text=info_text, fg='#059669')
-            self.check_can_generate()
-            messagebox.showinfo("Successo", f"Caricati {len(self.csv_data)} incassi!")
-            
+            st.success(f"✅ Caricati {len(st.session_state.csv_data)} incassi!")
         except Exception as e:
-            messagebox.showerror("Errore", f"Errore nel caricamento del CSV:\n{str(e)}")
+            st.error(f"❌ Errore nel caricamento: {str(e)}")
+
+# Mostra riepilogo incassi
+if st.session_state.csv_data:
+    total = sum(float(row.get('importo', 0)) for row in st.session_state.csv_data)
+    st.info(f"""
+    **Incassi caricati:** {len(st.session_state.csv_data)}  
+    **Importo totale:** € {total:.2f}
+    """)
     
-    def check_can_generate(self):
-        if (self.company_data['nome_azienda'] and 
-            self.company_data['iban'] and 
-            self.company_data['creditor_id'] and 
-            len(self.csv_data) > 0):
-            self.generate_btn.config(state='normal')
-        else:
-            self.generate_btn.config(state='disabled')
-    
-    def generate_xml(self):
+    with st.expander("📋 Visualizza dettagli incassi"):
+        st.dataframe(st.session_state.csv_data)
+
+st.divider()
+
+# Sezione 3: Genera XML
+st.header("3️⃣ Genera XML")
+
+can_generate = (
+    st.session_state.company_data['nome_azienda'] and
+    st.session_state.company_data['iban'] and
+    st.session_state.company_data['creditor_id'] and
+    len(st.session_state.csv_data) > 0
+)
+
+if st.button("✅ Genera XML SEPA SDD", type="primary", disabled=not can_generate):
+    try:
         now = datetime.now()
         msg_id = f"MSG-{int(now.timestamp())}"
         cre_dt_tm = now.isoformat()
-        reqd_colltn_dt = self.csv_data[0].get('data_scadenza', now.strftime('%Y-%m-%d'))
+        reqd_colltn_dt = st.session_state.csv_data[0].get('data_scadenza', now.strftime('%Y-%m-%d'))
         
-        total_amount = sum(float(row.get('importo', 0)) for row in self.csv_data)
+        total_amount = sum(float(row.get('importo', 0)) for row in st.session_state.csv_data)
         
         xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
         xml += '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.008.001.02" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n'
@@ -280,16 +155,16 @@ class SDDXMLGenerator:
         xml += '    <GrpHdr>\n'
         xml += f'      <MsgId>{msg_id}</MsgId>\n'
         xml += f'      <CreDtTm>{cre_dt_tm}</CreDtTm>\n'
-        xml += f'      <NbOfTxs>{len(self.csv_data)}</NbOfTxs>\n'
+        xml += f'      <NbOfTxs>{len(st.session_state.csv_data)}</NbOfTxs>\n'
         xml += f'      <CtrlSum>{total_amount:.2f}</CtrlSum>\n'
         xml += '      <InitgPty>\n'
-        xml += f'        <Nm>{self.company_data["nome_azienda"]}</Nm>\n'
+        xml += f'        <Nm>{st.session_state.company_data["nome_azienda"]}</Nm>\n'
         xml += '      </InitgPty>\n'
         xml += '    </GrpHdr>\n'
         xml += '    <PmtInf>\n'
         xml += f'      <PmtInfId>PMTINF-{int(now.timestamp())}</PmtInfId>\n'
         xml += '      <PmtMtd>DD</PmtMtd>\n'
-        xml += f'      <NbOfTxs>{len(self.csv_data)}</NbOfTxs>\n'
+        xml += f'      <NbOfTxs>{len(st.session_state.csv_data)}</NbOfTxs>\n'
         xml += f'      <CtrlSum>{total_amount:.2f}</CtrlSum>\n'
         xml += '      <PmtTpInf>\n'
         xml += '        <SvcLvl>\n'
@@ -302,18 +177,18 @@ class SDDXMLGenerator:
         xml += '      </PmtTpInf>\n'
         xml += f'      <ReqdColltnDt>{reqd_colltn_dt}</ReqdColltnDt>\n'
         xml += '      <Cdtr>\n'
-        xml += f'        <Nm>{self.company_data["nome_azienda"]}</Nm>\n'
+        xml += f'        <Nm>{st.session_state.company_data["nome_azienda"]}</Nm>\n'
         xml += '      </Cdtr>\n'
         xml += '      <CdtrAcct>\n'
         xml += '        <Id>\n'
-        xml += f'          <IBAN>{self.company_data["iban"]}</IBAN>\n'
+        xml += f'          <IBAN>{st.session_state.company_data["iban"]}</IBAN>\n'
         xml += '        </Id>\n'
         xml += '      </CdtrAcct>\n'
         xml += '      <CdtrSchmeId>\n'
         xml += '        <Id>\n'
         xml += '          <PrvtId>\n'
         xml += '            <Othr>\n'
-        xml += f'              <Id>{self.company_data["creditor_id"]}</Id>\n'
+        xml += f'              <Id>{st.session_state.company_data["creditor_id"]}</Id>\n'
         xml += '              <SchmeNm>\n'
         xml += '                <Prtry>SEPA</Prtry>\n'
         xml += '              </SchmeNm>\n'
@@ -322,7 +197,7 @@ class SDDXMLGenerator:
         xml += '        </Id>\n'
         xml += '      </CdtrSchmeId>\n'
         
-        for index, row in enumerate(self.csv_data):
+        for index, row in enumerate(st.session_state.csv_data):
             end_to_end_id = f"E2E-{int(now.timestamp())}-{index + 1}"
             xml += '      <DrctDbtTxInf>\n'
             xml += '        <PmtId>\n'
@@ -359,18 +234,27 @@ class SDDXMLGenerator:
         xml += '  </CstmrDrctDbtInitn>\n'
         xml += '</Document>'
         
-        filepath = filedialog.asksaveasfilename(
-            defaultextension=".xml",
-            filetypes=[("XML files", "*.xml")],
-            initialfile=f"SEPA_SDD_{int(now.timestamp())}.xml"
+        st.success("✅ File XML generato con successo!")
+        
+        st.download_button(
+            label="💾 Scarica XML SEPA SDD",
+            data=xml,
+            file_name=f"SEPA_SDD_{int(now.timestamp())}.xml",
+            mime="text/xml"
         )
         
-        if filepath:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(xml)
-            messagebox.showinfo("Successo", f"File XML generato con successo!\n\n{filepath}")
+    except Exception as e:
+        st.error(f"❌ Errore nella generazione: {str(e)}")
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = SDDXMLGenerator(root)
-    root.mainloop()
+if not can_generate:
+    st.warning("⚠️ Completa i passi 1 e 2 prima di generare l'XML")
+
+# Note in fondo
+st.divider()
+st.markdown("""
+### 📝 Note importanti:
+- **Formato CSV:** nome, cognome, iban, importo, causale, data_scadenza
+- **Date:** formato YYYY-MM-DD (es. 2024-02-15)
+- **Importo:** punto decimale (es. 100.50)
+- **Standard:** XML compatibile con SEPA pain.008.001.02
+""")
