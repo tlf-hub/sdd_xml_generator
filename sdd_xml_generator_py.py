@@ -19,10 +19,79 @@ if 'dati_azienda_caricati' not in st.session_state:
     st.session_state.dati_azienda_caricati = {}
 if 'lista_incassi' not in st.session_state:
     st.session_state.lista_incassi = []
+if 'data_addebito' not in st.session_state:
+    st.session_state.data_addebito = None
 
 def pulisci_iban(iban):
     """Rimuove spazi dall'IBAN"""
     return re.sub(r'\s+', '', iban.upper())
+
+def normalizza_data(data_str):
+    """Normalizza una data nel formato YYYY-MM-DD"""
+    if pd.isna(data_str):
+        return None
+    
+    data_str = str(data_str).strip()
+    
+    # Prova vari formati comuni
+    formati = [
+        '%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', 
+        '%d.%m.%Y', '%Y/%m/%d', '%d/%m/%y',
+        '%d-%m-%y', '%d.%m.%y'
+    ]
+    
+    for formato in formati:
+        try:
+            data_obj = datetime.strptime(data_str, formato)
+            return data_obj.strftime('%Y-%m-%d')
+        except ValueError:
+            continue
+    
+    return data_str
+
+def normalizza_importo(importo_str):
+    """Normalizza un importo nel formato xxxx.xx"""
+    if pd.isna(importo_str):
+        return "0.00"
+    
+    importo_str = str(importo_str).strip()
+    
+    # Rimuovi spazi e sostituisci virgola con punto
+    importo_str = importo_str.replace(' ', '').replace(',', '.')
+    
+    try:
+        importo_float = float(importo_str)
+        return f"{importo_float:.2f}"
+    except ValueError:
+        return "0.00"
+
+def aggrega_incassi(df):
+    """Aggrega le righe per lo stesso debitore"""
+    # Raggruppa per IBAN (che identifica univocamente il debitore)
+    df_aggregato = df.groupby('iban').agg({
+        'nome': 'first',
+        'cognome': 'first',
+        'codice_fiscale': 'first',
+        'indirizzo': 'first',
+        'cap': 'first',
+        'citta': 'first',
+        'provincia': 'first',
+        'paese': 'first',
+        'bic': 'first',
+        'importo': lambda x: sum(float(i) for i in x),
+        'causale': lambda x: list(dict.fromkeys(x)),  # Rimuove duplicati mantenendo l'ordine
+        'data_firma_mandato': 'first'
+    }).reset_index()
+    
+    # Formatta la causale aggregata
+    df_aggregato['causale'] = df_aggregato['causale'].apply(
+        lambda causali: "Ft. " + ", ".join(str(c) for c in causali)
+    )
+    
+    # Formatta l'importo
+    df_aggregato['importo'] = df_aggregato['importo'].apply(lambda x: f"{x:.2f}")
+    
+    return df_aggregato
 
 def genera_message_id():
     """Genera un Message ID univoco"""
@@ -56,11 +125,13 @@ def crea_template_incassi():
     """Crea il template CSV per gli incassi"""
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['nome', 'cognome', 'codice_fiscale', 'indirizzo', 'cap', 'citta', 'provincia', 'paese', 'iban', 'bic', 'importo', 'causale', 'data_scadenza', 'data_firma_mandato'])
+    writer.writerow(['nome', 'cognome', 'codice_fiscale', 'indirizzo', 'cap', 'citta', 'provincia', 'paese', 'iban', 'bic', 'importo', 'causale', 'data_firma_mandato'])
     writer.writerow(['Mario', 'Rossi', 'RSSMRA80A01H501Z', 'Via Roma 123', '20100', 'Milano', 'MI', 'IT', 'IT60X0542811101000000654321', 'BPMOIT22XXX', '150.00', 
-                    'Pagamento servizio gennaio 2025', '2025-02-15', '2024-01-15'])
+                    'Servizio gennaio 2025', '15/01/2024'])
+    writer.writerow(['Mario', 'Rossi', 'RSSMRA80A01H501Z', 'Via Roma 123', '20100', 'Milano', 'MI', 'IT', 'IT60X0542811101000000654321', 'BPMOIT22XXX', '75,50', 
+                    'Servizio febbraio 2025', '15/01/2024'])
     writer.writerow(['Laura', 'Bianchi', 'BNCLRA85M45F205Y', 'Corso Italia 45', '00100', 'Roma', 'RM', 'IT', 'IT28W8000000292100645211111', 'UNCRITMM', '250.50', 
-                    'Abbonamento annuale', '2025-02-20', '2024-02-10'])
+                    'Abbonamento annuale', '10/02/2024'])
     return output.getvalue()
 
 def valida_dati_aziendali(df):
@@ -73,27 +144,42 @@ def valida_dati_aziendali(df):
             return False, f"Campo vuoto: {field}"
     return True, "OK"
 
-def valida_incassi(df):
-    """Valida i dati degli incassi"""
-    required_fields = ['nome', 'cognome', 'codice_fiscale', 'indirizzo', 'cap', 'citta', 'provincia', 'paese', 'iban', 'bic', 'importo', 'causale', 'data_scadenza', 'data_firma_mandato']
+def processa_csv_incassi(df):
+    """Processa il CSV degli incassi: normalizza date, importi e aggrega"""
+    
+    # Lista dei campi richiesti
+    required_fields = ['nome', 'cognome', 'codice_fiscale', 'indirizzo', 'cap', 'citta', 'provincia', 'paese', 'iban', 'bic', 'importo', 'causale', 'data_firma_mandato']
+    
+    # Se il CSV non ha intestazioni, le aggiungiamo
+    if df.columns[0] not in required_fields:
+        if len(df.columns) == len(required_fields):
+            df.columns = required_fields
+        else:
+            return None, f"Il CSV deve avere {len(required_fields)} colonne"
+    
+    # Verifica che tutti i campi siano presenti
     for field in required_fields:
         if field not in df.columns:
-            return False, f"Campo mancante: {field}"
+            return None, f"Campo mancante: {field}"
     
+    # Normalizza le date
+    df['data_firma_mandato'] = df['data_firma_mandato'].apply(normalizza_data)
+    
+    # Normalizza gli importi
+    df['importo'] = df['importo'].apply(normalizza_importo)
+    
+    # Verifica che tutti i campi obbligatori siano compilati
     for idx, row in df.iterrows():
         for field in required_fields:
             if pd.isna(row[field]) or str(row[field]).strip() == '':
-                return False, f"Campo vuoto nella riga {idx+2}: {field}"
-        
-        # Valida importo
-        try:
-            float(row['importo'])
-        except:
-            return False, f"Importo non valido nella riga {idx+2}"
+                return None, f"Campo vuoto nella riga {idx+2}: {field}"
     
-    return True, "OK"
+    # Aggrega le righe per lo stesso debitore
+    df_aggregato = aggrega_incassi(df)
+    
+    return df_aggregato, "OK"
 
-def genera_xml_sepa(dati_aziendali, incassi):
+def genera_xml_sepa(dati_aziendali, incassi, data_addebito):
     """Genera il file XML SEPA SDD"""
     # Calcola totali
     numero_transazioni = len(incassi)
@@ -132,9 +218,8 @@ def genera_xml_sepa(dati_aziendali, incassi):
     SubElement(lcl_instrm, 'Cd').text = 'CORE'
     SubElement(pmt_tp_inf, 'SeqTp').text = 'RCUR'
     
-    # Data richiesta (usa la prima data scadenza)
-    data_richiesta = incassi[0]['data_scadenza']
-    SubElement(pmt_inf, 'ReqdColltnDt').text = data_richiesta
+    # Data addebito
+    SubElement(pmt_inf, 'ReqdColltnDt').text = data_addebito
     
     # Creditor
     cdtr = SubElement(pmt_inf, 'Cdtr')
@@ -267,8 +352,26 @@ if uploaded_aziendale is not None:
 
 st.markdown("---")
 
-# STEP 2: CSV Incassi
-st.header("💳 STEP 2: CSV Incassi")
+# STEP 2: Data Addebito e CSV Incassi
+st.header("💳 STEP 2: Data Addebito e CSV Incassi")
+
+# Data addebito
+st.subheader("📅 Data Addebito su Conto Corrente")
+data_addebito_input = st.date_input(
+    "Seleziona la data di addebito",
+    value=None,
+    min_value=datetime.now().date(),
+    help="Data in cui i fondi saranno addebitati dai conti dei debitori"
+)
+
+if data_addebito_input:
+    st.session_state.data_addebito = data_addebito_input.strftime('%Y-%m-%d')
+    st.success(f"✅ Data addebito impostata: {st.session_state.data_addebito}")
+
+st.markdown("---")
+
+# CSV Incassi
+st.subheader("📄 Caricamento CSV Incassi")
 
 col1, col2 = st.columns(2)
 
@@ -286,31 +389,37 @@ with col2:
     uploaded_incassi = st.file_uploader(
         "📂 Carica CSV Incassi",
         type=['csv'],
-        key="upload_incassi"
+        key="upload_incassi",
+        help="Il CSV può avere o meno intestazioni. Date e importi saranno normalizzati automaticamente."
     )
 
 if uploaded_incassi is not None:
     try:
-        df_incassi = pd.read_csv(uploaded_incassi)
-        valido, messaggio = valida_incassi(df_incassi)
+        # Prova prima a leggere con header
+        df_incassi = pd.read_csv(uploaded_incassi, header=0)
         
-        if valido:
-            st.session_state.lista_incassi = df_incassi.to_dict('records')
+        # Processa il CSV: normalizza e aggrega
+        df_processato, messaggio = processa_csv_incassi(df_incassi)
+        
+        if df_processato is not None:
+            st.session_state.lista_incassi = df_processato.to_dict('records')
             
             totale = sum(float(inc['importo']) for inc in st.session_state.lista_incassi)
             
-            st.success(f"✅ Caricati {len(st.session_state.lista_incassi)} incassi!")
+            st.success(f"✅ CSV processato! {len(st.session_state.lista_incassi)} debitori aggregati")
             
             col_a, col_b, col_c = st.columns(3)
             with col_a:
-                st.metric("Numero Transazioni", len(st.session_state.lista_incassi))
+                st.metric("Numero Debitori", len(st.session_state.lista_incassi))
             with col_b:
                 st.metric("Totale Incassi", f"€ {totale:.2f}")
             with col_c:
-                st.metric("Media per Transazione", f"€ {totale/len(st.session_state.lista_incassi):.2f}")
+                st.metric("Media per Debitore", f"€ {totale/len(st.session_state.lista_incassi):.2f}")
             
-            with st.expander("🔍 Visualizza Dettaglio Incassi"):
-                st.dataframe(df_incassi, use_container_width=True)
+            with st.expander("🔍 Visualizza Debitori Aggregati"):
+                st.dataframe(df_processato, use_container_width=True)
+            
+            st.info("ℹ️ I debitori con lo stesso IBAN sono stati aggregati sommando gli importi e unendo le causali")
         else:
             st.error(f"❌ Errore: {messaggio}")
     except Exception as e:
@@ -321,14 +430,15 @@ st.markdown("---")
 # STEP 3: Generazione XML
 st.header("🚀 STEP 3: Generazione XML SEPA")
 
-if st.session_state.dati_azienda_caricati and st.session_state.lista_incassi:
+if st.session_state.dati_azienda_caricati and st.session_state.lista_incassi and st.session_state.data_addebito:
     st.info("✅ Tutti i dati sono pronti! Puoi generare il file XML SEPA.")
     
     if st.button("🚀 Genera XML SEPA", type="primary", use_container_width=True):
         try:
             xml_content = genera_xml_sepa(
                 st.session_state.dati_azienda_caricati,
-                st.session_state.lista_incassi
+                st.session_state.lista_incassi,
+                st.session_state.data_addebito
             )
             
             filename = f"SEPA_SDD_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xml"
@@ -350,11 +460,19 @@ if st.session_state.dati_azienda_caricati and st.session_state.lista_incassi:
         except Exception as e:
             st.error(f"❌ Errore nella generazione del file XML: {str(e)}")
 else:
-    st.warning("⚠️ Carica prima i dati aziendali e gli incassi per generare il file XML.")
+    messaggi = []
+    if not st.session_state.dati_azienda_caricati:
+        messaggi.append("- Dati aziendali")
+    if not st.session_state.data_addebito:
+        messaggi.append("- Data addebito")
+    if not st.session_state.lista_incassi:
+        messaggi.append("- CSV incassi")
+    
+    st.warning(f"⚠️ Completa i seguenti passaggi:\n" + "\n".join(messaggi))
 
 st.markdown("---")
 st.info("ℹ️ Il file XML generato è compatibile con il formato SEPA pain.008.001.02 e pronto per essere caricato nel tuo sistema di home banking.")
 
 # Footer
 st.markdown("---")
-st.caption("Generatore XML SEPA SDD v1.0 | Formato: pain.008.001.02")
+st.caption("Generatore XML SEPA SDD v2.0 | Formato: pain.008.001.02 | Aggregazione automatica debitori")
