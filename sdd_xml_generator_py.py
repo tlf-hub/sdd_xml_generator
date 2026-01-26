@@ -15,10 +15,10 @@ st.set_page_config(
 )
 
 # Inizializzazione session state
-if 'dati_aziendali' not in st.session_state:
-    st.session_state.dati_aziendali = {}
-if 'incassi' not in st.session_state:
-    st.session_state.incassi = []
+if 'dati_azienda_caricati' not in st.session_state:
+    st.session_state.dati_azienda_caricati = {}
+if 'lista_incassi' not in st.session_state:
+    st.session_state.lista_incassi = []
 
 def pulisci_iban(iban):
     """Rimuove spazi dall'IBAN"""
@@ -224,7 +224,7 @@ with col2:
     uploaded_aziendale = st.file_uploader(
         "📂 Carica CSV Dati Aziendali",
         type=['csv'],
-        key="aziendale"
+        key="upload_aziendale"
     )
 
 if uploaded_aziendale is not None:
@@ -233,13 +233,13 @@ if uploaded_aziendale is not None:
         valido, messaggio = valida_dati_aziendali(df_aziendale)
         
         if valido:
-            st.session_state.dati_aziendali = df_aziendale.iloc[0].to_dict()
+            st.session_state.dati_azienda_caricati = df_aziendale.iloc[0].to_dict()
             st.success("✅ Dati Aziendali Caricati Correttamente!")
             
             with st.expander("🔍 Visualizza Dati Caricati"):
-                st.write(f"**Nome Azienda:** {st.session_state.dati_aziendali['nome_azienda']}")
-                st.write(f"**IBAN:** {st.session_state.dati_aziendali['iban']}")
-                st.write(f"**Creditor ID:** {st.session_state.dati_aziendali['creditor_id']}")
+                st.write(f"**Nome Azienda:** {st.session_state.dati_azienda_caricati['nome_azienda']}")
+                st.write(f"**IBAN:** {st.session_state.dati_azienda_caricati['iban']}")
+                st.write(f"**Creditor ID:** {st.session_state.dati_azienda_caricati['creditor_id']}")
         else:
             st.error(f"❌ Errore: {messaggio}")
     except Exception as e:
@@ -266,7 +266,7 @@ with col2:
     uploaded_incassi = st.file_uploader(
         "📂 Carica CSV Incassi",
         type=['csv'],
-        key="incassi"
+        key="upload_incassi"
     )
 
 if uploaded_incassi is not None:
@@ -275,19 +275,19 @@ if uploaded_incassi is not None:
         valido, messaggio = valida_incassi(df_incassi)
         
         if valido:
-            st.session_state.incassi = df_incassi.to_dict('records')
+            st.session_state.lista_incassi = df_incassi.to_dict('records')
             
-            totale = sum(float(inc['importo']) for inc in st.session_state.incassi)
+            totale = sum(float(inc['importo']) for inc in st.session_state.lista_incassi)
             
-            st.success(f"✅ Caricati {len(st.session_state.incassi)} incassi!")
+            st.success(f"✅ Caricati {len(st.session_state.lista_incassi)} incassi!")
             
             col_a, col_b, col_c = st.columns(3)
             with col_a:
-                st.metric("Numero Transazioni", len(st.session_state.incassi))
+                st.metric("Numero Transazioni", len(st.session_state.lista_incassi))
             with col_b:
                 st.metric("Totale Incassi", f"€ {totale:.2f}")
             with col_c:
-                st.metric("Media per Transazione", f"€ {totale/len(st.session_state.incassi):.2f}")
+                st.metric("Media per Transazione", f"€ {totale/len(st.session_state.lista_incassi):.2f}")
             
             with st.expander("🔍 Visualizza Dettaglio Incassi"):
                 st.dataframe(df_incassi, use_container_width=True)
@@ -301,14 +301,14 @@ st.markdown("---")
 # STEP 3: Generazione XML
 st.header("🚀 STEP 3: Generazione XML SEPA")
 
-if st.session_state.dati_aziendali and st.session_state.incassi:
+if st.session_state.dati_azienda_caricati and st.session_state.lista_incassi:
     st.info("✅ Tutti i dati sono pronti! Puoi generare il file XML SEPA.")
     
     if st.button("🚀 Genera XML SEPA", type="primary", use_container_width=True):
         try:
             xml_content = genera_xml_sepa(
-                st.session_state.dati_aziendali,
-                st.session_state.incassi
+                st.session_state.dati_azienda_caricati,
+                st.session_state.lista_incassi
             )
             
             filename = f"SEPA_SDD_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xml"
