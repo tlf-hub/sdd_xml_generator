@@ -88,9 +88,9 @@ col3, col4 = st.columns(2)
 
 with col3:
     if st.button("📥 Scarica Template CSV Incassi", type="primary"):
-        template_csv = "nome,cognome,iban,importo,causale,data_scadenza\n"
-        template_csv += "Mario,Rossi,IT60X0542811101000000123456,100.50,Pagamento fattura 001,2024-02-15\n"
-        template_csv += "Laura,Bianchi,IT28W8000000292100645211208,250.00,Abbonamento mensile,2024-02-15"
+        template_csv = "nome,cognome,iban,importo,causale,data_scadenza,rum,data_firma_mandato,tipo_sequenza\n"
+        template_csv += "Mario,Rossi,IT60X0542811101000000123456,100.50,Pagamento fattura 001,2024-02-15,CLIENTE-001-2024,2024-01-10,RCUR\n"
+        template_csv += "Laura,Bianchi,IT28W8000000292100645211208,250.00,Abbonamento mensile,2024-02-15,CLIENTE-002-2024,2024-01-12,RCUR"
         
         st.download_button(
             label="💾 Clicca per scaricare",
@@ -199,6 +199,13 @@ if st.button("✅ Genera XML SEPA SDD", type="primary", disabled=not can_generat
         
         for index, row in enumerate(st.session_state.csv_data):
             end_to_end_id = f"E2E-{int(now.timestamp())}-{index + 1}"
+            # RUM: Riferimento Unico Mandato (obbligatorio)
+            rum = row.get('rum', f'MNDT-{index + 1}')
+            # Data firma mandato (obbligatorio)
+            data_firma = row.get('data_firma_mandato', now.strftime('%Y-%m-%d'))
+            # Tipo sequenza (FRST=primo, RCUR=ricorrente, OOFF=una tantum, FNAL=finale)
+            tipo_seq = row.get('tipo_sequenza', 'RCUR').upper()
+            
             xml += '      <DrctDbtTxInf>\n'
             xml += '        <PmtId>\n'
             xml += f'          <EndToEndId>{end_to_end_id}</EndToEndId>\n'
@@ -206,8 +213,8 @@ if st.button("✅ Genera XML SEPA SDD", type="primary", disabled=not can_generat
             xml += f'        <InstdAmt Ccy="EUR">{float(row.get("importo", 0)):.2f}</InstdAmt>\n'
             xml += '        <DrctDbtTx>\n'
             xml += '          <MndtRltdInf>\n'
-            xml += f'            <MndtId>MNDT-{index + 1}</MndtId>\n'
-            xml += f'            <DtOfSgntr>{now.strftime("%Y-%m-%d")}</DtOfSgntr>\n'
+            xml += f'            <MndtId>{rum}</MndtId>\n'
+            xml += f'            <DtOfSgntr>{data_firma}</DtOfSgntr>\n'
             xml += '          </MndtRltdInf>\n'
             xml += '        </DrctDbtTx>\n'
             xml += '        <DbtrAgt>\n'
@@ -253,8 +260,25 @@ if not can_generate:
 st.divider()
 st.markdown("""
 ### 📝 Note importanti:
-- **Formato CSV:** nome, cognome, iban, importo, causale, data_scadenza
-- **Date:** formato YYYY-MM-DD (es. 2024-02-15)
-- **Importo:** punto decimale (es. 100.50)
-- **Standard:** XML compatibile con SEPA pain.008.001.02
+
+**Campi CSV obbligatori:**
+- `nome`, `cognome`: nome e cognome del debitore
+- `iban`: IBAN del debitore (formato IT + 25 caratteri)
+- `importo`: importo in euro con punto decimale (es. 100.50)
+- `causale`: descrizione del pagamento
+- `data_scadenza`: data richiesta incasso (formato YYYY-MM-DD)
+- `rum`: **Riferimento Unico Mandato** - codice univoco max 35 caratteri (es. CLIENTE-001-2024)
+- `data_firma_mandato`: data firma del mandato (formato YYYY-MM-DD)
+- `tipo_sequenza`: tipo incasso - valori possibili:
+  - `FRST` = primo addebito di una serie
+  - `RCUR` = addebito ricorrente (default)
+  - `OOFF` = addebito una tantum
+  - `FNAL` = ultimo addebito di una serie
+
+**Cosa serve:**
+1. **Creditor ID** (ICS): fornito dalla tua banca (es. IT00ZZZ000000000000)
+2. **Mandato firmato** da ogni cliente con il RUM univoco
+3. **Conservazione mandati**: sei responsabile della conservazione dei mandati firmati
+
+**Standard:** XML compatibile con SEPA pain.008.001.02
 """)
