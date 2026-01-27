@@ -122,6 +122,10 @@ def valida_dati_aziendali(df):
             return False, f"Campo mancante: {field}"
         if df[field].iloc[0] == '' or pd.isna(df[field].iloc[0]):
             return False, f"Campo vuoto: {field}"
+    
+    # Converti ABI in stringa con zero padding
+    df['abi'] = df['abi'].astype(str).str.zfill(5)
+    
     return True, "OK"
 
 def processa_csv_incassi(df):
@@ -227,7 +231,7 @@ def genera_xml_cbi(dati_aziendali, incassi, data_addebito):
     cdtr_agt = SubElement(pmt_inf, 'CdtrAgt')
     fin_instn_id = SubElement(cdtr_agt, 'FinInstnId')
     clr_sys_mmb_id = SubElement(fin_instn_id, 'ClrSysMmbId')
-    SubElement(clr_sys_mmb_id, 'MmbId').text = dati_aziendali['abi']
+    SubElement(clr_sys_mmb_id, 'MmbId').text = str(dati_aziendali['abi']).zfill(5)
     
     # CdtrSchmeId
     cdtr_schme_id = SubElement(pmt_inf, 'CdtrSchmeId')
