@@ -445,33 +445,38 @@ with col2:
 
 if uploaded_incassi is not None:
     try:
-        def rileva_separatore(file_obj):
+        def rileva_separatore(file_obj, encoding='utf-8'):
             file_obj.seek(0)
-            sample = file_obj.read(1024).decode('utf-8', errors='ignore')
+            try:
+                sample = file_obj.read(2048).decode(encoding, errors='ignore')
+            except:
+                sample = file_obj.read(2048).decode('utf-8', errors='ignore')
             file_obj.seek(0)
             separatori = [',', ';', '\t', '|']
             conteggi = {sep: sample.count(sep) for sep in separatori}
             sep_migliore = max(conteggi, key=conteggi.get)
             return sep_migliore if conteggi[sep_migliore] > 0 else ','
         
-        def ha_intestazioni(file_obj, sep):
+        def ha_intestazioni(file_obj, sep, encoding='utf-8'):
             file_obj.seek(0)
-            prima_riga = file_obj.readline().decode('utf-8', errors='ignore').lower()
+            try:
+                prima_riga = file_obj.readline().decode(encoding, errors='ignore').lower()
+            except:
+                prima_riga = file_obj.readline().decode('utf-8', errors='ignore').lower()
             file_obj.seek(0)
-            # Parole chiave più specifiche per identificare intestazioni
             parole_chiave = ['nome_debitore', 'debitore', 'codice_fiscale', 'causale', 'data_firma']
-            # Deve avere almeno 2 parole chiave per essere considerata intestazione
             conteggio = sum(1 for parola in parole_chiave if parola in prima_riga)
             return conteggio >= 2
         
         df_incassi = None
-        encodings = ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252']
+        # Aggiungi UTF-16 e UTF-16-LE agli encoding da provare
+        encodings = ['utf-16', 'utf-16-le', 'utf-8', 'utf-8-sig', 'latin-1', 'cp1252']
         
         for encoding in encodings:
             try:
                 uploaded_incassi.seek(0)
-                sep = rileva_separatore(uploaded_incassi)
-                has_header = ha_intestazioni(uploaded_incassi, sep)
+                sep = rileva_separatore(uploaded_incassi, encoding)
+                has_header = ha_intestazioni(uploaded_incassi, sep, encoding)
                 uploaded_incassi.seek(0)
                 
                 if has_header:
@@ -480,8 +485,13 @@ if uploaded_incassi is not None:
                 else:
                     df_incassi = pd.read_csv(uploaded_incassi, encoding=encoding, sep=sep, header=None)
                     st.info(f"🔍 Rilevato separatore: '{sep}' | Encoding: {encoding} | Senza intestazioni")
-                break
-            except (UnicodeDecodeError, pd.errors.ParserError):
+                
+                # Verifica che il dataframe sia valido (non tutte colonne NaN)
+                if df_incassi is not None and not df_incassi.iloc[0].isna().all():
+                    break
+                else:
+                    df_incassi = None
+            except (UnicodeDecodeError, pd.errors.ParserError, Exception):
                 continue
         
         if df_incassi is not None:
