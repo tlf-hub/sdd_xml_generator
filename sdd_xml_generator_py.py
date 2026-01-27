@@ -136,49 +136,65 @@ def processa_csv_incassi(df):
     
     st.info(f"📊 CSV caricato: {len(df.columns)} colonne, {len(df)} righe")
     
-    prima_colonna = str(df.columns[0]).lower().strip()
-    
+    # Se il dataframe non ha i nomi delle colonne corretti, assegnali
     if len(df.columns) == len(required_fields):
-        colonne_valide = any(col.lower().strip() in ['nome_debitore', 'nome', 'debitore', 'codice_fiscale', 'iban', 'importo', 'causale', 'data_firma_mandato'] 
-                           for col in df.columns)
+        # Controlla se la prima colonna ha un nome che sembra un'intestazione
+        prima_colonna = str(df.columns[0]).lower().strip()
         
-        if not colonne_valide:
+        # Se le colonne sono numeriche (0, 1, 2...) significa che non c'erano intestazioni
+        if isinstance(df.columns[0], int):
             df.columns = required_fields
-            st.success("✅ Intestazioni colonne aggiunte automaticamente")
-        else:
-            mapping = {}
-            for col in df.columns:
-                col_lower = col.lower().strip()
-                if 'nome' in col_lower or 'debitore' in col_lower:
-                    mapping[col] = 'nome_debitore'
-                elif 'codice' in col_lower or 'fiscale' in col_lower or 'cf' in col_lower or 'piva' in col_lower or 'partita' in col_lower:
-                    mapping[col] = 'codice_fiscale'
-                elif 'iban' in col_lower:
-                    mapping[col] = 'iban'
-                elif 'importo' in col_lower or 'ammontare' in col_lower or 'totale' in col_lower:
-                    mapping[col] = 'importo'
-                elif 'causale' in col_lower or 'descrizione' in col_lower or 'motivo' in col_lower:
-                    mapping[col] = 'causale'
-                elif 'data' in col_lower or 'firma' in col_lower or 'mandato' in col_lower:
-                    mapping[col] = 'data_firma_mandato'
+            st.success("✅ Intestazioni colonne aggiunte automaticamente (CSV senza intestazioni)")
+        # Se le colonne hanno nomi ma non corrispondono ai campi richiesti
+        elif prima_colonna not in ['nome_debitore', 'nome', 'debitore']:
+            colonne_valide = any(col.lower().strip() in ['nome_debitore', 'nome', 'debitore', 'codice_fiscale', 'cf', 'iban', 'importo', 'causale', 'data'] 
+                               for col in df.columns)
             
-            if len(mapping) == len(required_fields):
-                df = df.rename(columns=mapping)
-                st.success("✅ Intestazioni colonne mappate automaticamente")
-            else:
+            if not colonne_valide:
+                # Nessuna intestazione valida, sostituisci tutto
                 df.columns = required_fields
-                st.warning("⚠️ Alcune intestazioni non riconosciute, applicate intestazioni standard")
+                st.success("✅ Intestazioni colonne aggiunte automaticamente")
+            else:
+                # Mappa le intestazioni esistenti
+                mapping = {}
+                for col in df.columns:
+                    col_lower = col.lower().strip()
+                    if 'nome' in col_lower or 'debitore' in col_lower:
+                        mapping[col] = 'nome_debitore'
+                    elif 'codice' in col_lower or 'fiscale' in col_lower or 'cf' in col_lower or 'piva' in col_lower or 'partita' in col_lower:
+                        mapping[col] = 'codice_fiscale'
+                    elif 'iban' in col_lower:
+                        mapping[col] = 'iban'
+                    elif 'importo' in col_lower or 'ammontare' in col_lower or 'totale' in col_lower:
+                        mapping[col] = 'importo'
+                    elif 'causale' in col_lower or 'descrizione' in col_lower or 'motivo' in col_lower:
+                        mapping[col] = 'causale'
+                    elif 'data' in col_lower or 'firma' in col_lower or 'mandato' in col_lower:
+                        mapping[col] = 'data_firma_mandato'
+                
+                if len(mapping) == len(required_fields):
+                    df = df.rename(columns=mapping)
+                    st.success("✅ Intestazioni colonne mappate automaticamente")
+                else:
+                    df.columns = required_fields
+                    st.warning("⚠️ Alcune intestazioni non riconosciute, applicate intestazioni standard")
     else:
         return None, f"Il CSV deve avere {len(required_fields)} colonne, ne ha {len(df.columns)}"
     
+    # Normalizza le date (riempie con data odierna se vuoto)
     df['data_firma_mandato'] = df['data_firma_mandato'].apply(normalizza_data)
+    
+    # Normalizza gli importi
     df['importo'] = df['importo'].apply(normalizza_importo)
     
+    # Verifica che tutti i campi obbligatori siano compilati
     for idx, row in df.iterrows():
         for field in ['nome_debitore', 'codice_fiscale', 'iban', 'importo', 'causale']:
-            if pd.isna(row[field]) or str(row[field]).strip() == '':
+            valore = str(row[field]).strip() if not pd.isna(row[field]) else ''
+            if valore == '' or valore == 'nan':
                 return None, f"Campo vuoto nella riga {idx+2}: {field}"
     
+    # Aggrega le righe per lo stesso debitore
     df_aggregato = aggrega_incassi(df)
     
     return df_aggregato, "OK"
@@ -430,6 +446,13 @@ if uploaded_incassi is not None:
             sep_migliore = max(conteggi, key=conteggi.get)
             return sep_migliore if conteggi[sep_migliore] > 0 else ','
         
+        def ha_intestazioni(file_obj, sep):
+            file_obj.seek(0)
+            prima_riga = file_obj.readline().decode('utf-8', errors='ignore').lower()
+            file_obj.seek(0)
+            parole_chiave = ['nome', 'debitore', 'codice', 'fiscale', 'iban', 'importo', 'causale', 'data', 'mandato']
+            return any(parola in prima_riga for parola in parole_chiave)
+        
         df_incassi = None
         encodings = ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252']
         
@@ -437,9 +460,15 @@ if uploaded_incassi is not None:
             try:
                 uploaded_incassi.seek(0)
                 sep = rileva_separatore(uploaded_incassi)
+                has_header = ha_intestazioni(uploaded_incassi, sep)
                 uploaded_incassi.seek(0)
-                df_incassi = pd.read_csv(uploaded_incassi, encoding=encoding, sep=sep)
-                st.info(f"🔍 Rilevato separatore: '{sep}' | Encoding: {encoding}")
+                
+                if has_header:
+                    df_incassi = pd.read_csv(uploaded_incassi, encoding=encoding, sep=sep)
+                    st.info(f"🔍 Rilevato separatore: '{sep}' | Encoding: {encoding} | Con intestazioni")
+                else:
+                    df_incassi = pd.read_csv(uploaded_incassi, encoding=encoding, sep=sep, header=None)
+                    st.info(f"🔍 Rilevato separatore: '{sep}' | Encoding: {encoding} | Senza intestazioni")
                 break
             except (UnicodeDecodeError, pd.errors.ParserError):
                 continue
