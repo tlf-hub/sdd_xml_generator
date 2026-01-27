@@ -21,6 +21,8 @@ if 'lista_incassi' not in st.session_state:
     st.session_state.lista_incassi = []
 if 'data_addebito' not in st.session_state:
     st.session_state.data_addebito = None
+if 'id_flusso' not in st.session_state:
+    st.session_state.id_flusso = None
 
 def pulisci_iban(iban):
     """Rimuove spazi dall'IBAN"""
@@ -28,8 +30,9 @@ def pulisci_iban(iban):
 
 def normalizza_data(data_str):
     """Normalizza una data nel formato YYYY-MM-DD"""
-    if pd.isna(data_str):
-        return None
+    if pd.isna(data_str) or str(data_str).strip() == '':
+        # Se la data è vuota, usa la data di oggi
+        return datetime.now().strftime('%Y-%m-%d')
     
     data_str = str(data_str).strip()
     
@@ -46,7 +49,8 @@ def normalizza_data(data_str):
         except ValueError:
             continue
     
-    return data_str
+    # Se nessun formato funziona, usa la data di oggi
+    return datetime.now().strftime('%Y-%m-%d')
 
 def normalizza_importo(importo_str):
     """Normalizza un importo nel formato xxxx.xx"""
@@ -97,8 +101,8 @@ def crea_template_aziendale():
     """Crea il template CSV per i dati aziendali"""
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['nome_azienda', 'indirizzo_azienda', 'iban', 'abi', 'creditor_id', 'id_flusso', 'prefisso_mandato'])
-    writer.writerow(['T.L.F. SRL', 'T.L.F. SRL', 'IT67R0569603211000011001X44', '05696', 'IT610010000006392981004', 'FLX9J372', '9J3073'])
+    writer.writerow(['nome_azienda', 'indirizzo_azienda', 'iban', 'abi', 'creditor_id', 'prefisso_mandato'])
+    writer.writerow(['T.L.F. SRL', 'T.L.F. SRL', 'IT67R0569603211000011001X44', '05696', 'IT610010000006392981004', '9J3073'])
     return output.getvalue()
 
 def crea_template_incassi():
@@ -116,7 +120,7 @@ def crea_template_incassi():
 
 def valida_dati_aziendali(df):
     """Valida i dati aziendali"""
-    required_fields = ['nome_azienda', 'indirizzo_azienda', 'iban', 'abi', 'creditor_id', 'id_flusso', 'prefisso_mandato']
+    required_fields = ['nome_azienda', 'indirizzo_azienda', 'iban', 'abi', 'creditor_id', 'prefisso_mandato']
     for field in required_fields:
         if field not in df.columns:
             return False, f"Campo mancante: {field}"
@@ -155,14 +159,14 @@ def processa_csv_incassi(df):
     
     return df_aggregato, "OK"
 
-def genera_xml_cbi(dati_aziendali, incassi, data_addebito):
+def genera_xml_cbi(dati_aziendali, incassi, data_addebito, id_flusso):
     """Genera il file XML SEPA SDD in formato CBI"""
     
     numero_transazioni = len(incassi)
     totale_importo = sum(float(inc['importo']) for inc in incassi)
     
     # Message ID
-    msg_id = genera_message_id(dati_aziendali['id_flusso'])
+    msg_id = genera_message_id(id_flusso)
     
     # Root element
     root = Element('CBIBdySDDReq')
@@ -194,7 +198,7 @@ def genera_xml_cbi(dati_aziendali, incassi, data_addebito):
     initg_pty_id = SubElement(initg_pty, 'Id')
     org_id = SubElement(initg_pty_id, 'OrgId')
     othr = SubElement(org_id, 'Othr')
-    SubElement(othr, 'Id').text = dati_aziendali['id_flusso']
+    SubElement(othr, 'Id').text = id_flusso
     SubElement(othr, 'Issr').text = 'CBI'
     
     # PmtInf
@@ -326,7 +330,21 @@ with col2:
 
 if uploaded_aziendale is not None:
     try:
-        df_aziendale = pd.read_csv(uploaded_aziendale)
+        # Prova diversi encoding
+        try:
+            df_aziendale = pd.read_csv(uploaded_aziendale, encoding='utf-8')
+        except UnicodeDecodeError:
+            uploaded_aziendale.seek(0)
+            try:
+                df_aziendale = pd.read_csv(uploaded_aziendale, encoding='utf-8-sig')
+            except UnicodeDecodeError:
+                uploaded_aziendale.seek(0)
+                try:
+                    df_aziendale = pd.read_csv(uploaded_aziendale, encoding='latin-1')
+                except UnicodeDecodeError:
+                    uploaded_aziendale.seek(0)
+                    df_aziendale = pd.read_csv(uploaded_aziendale, encoding='cp1252')
+        
         valido, messaggio = valida_dati_aziendali(df_aziendale)
         
         if valido:
@@ -338,7 +356,6 @@ if uploaded_aziendale is not None:
                 st.write(f"**IBAN:** {st.session_state.dati_azienda_caricati['iban']}")
                 st.write(f"**ABI:** {st.session_state.dati_azienda_caricati['abi']}")
                 st.write(f"**Creditor ID:** {st.session_state.dati_azienda_caricati['creditor_id']}")
-                st.write(f"**ID Flusso:** {st.session_state.dati_azienda_caricati['id_flusso']}")
                 st.write(f"**Prefisso Mandato:** {st.session_state.dati_azienda_caricati['prefisso_mandato']}")
         else:
             st.error(f"❌ Errore: {messaggio}")
@@ -348,7 +365,21 @@ if uploaded_aziendale is not None:
 st.markdown("---")
 
 # STEP 2: Data Addebito e CSV Incassi
-st.header("💳 STEP 2: Data Addebito e CSV Incassi")
+st.header("💳 STEP 2: ID Flusso, Data Addebito e CSV Incassi")
+
+st.subheader("🆔 ID Flusso")
+id_flusso_input = st.text_input(
+    "Inserisci l'ID Flusso",
+    value="",
+    max_chars=20,
+    help="ID univoco per identificare il flusso (es. FLX9J372). Può essere cambiato per ogni invio."
+)
+
+if id_flusso_input:
+    st.session_state.id_flusso = id_flusso_input
+    st.success(f"✅ ID Flusso impostato: {st.session_state.id_flusso}")
+
+st.markdown("---")
 
 st.subheader("📅 Data Addebito su Conto Corrente")
 data_addebito_input = st.date_input(
@@ -388,7 +419,20 @@ with col2:
 
 if uploaded_incassi is not None:
     try:
-        df_incassi = pd.read_csv(uploaded_incassi, header=0)
+        # Prova diversi encoding
+        try:
+            df_incassi = pd.read_csv(uploaded_incassi, header=0, encoding='utf-8')
+        except UnicodeDecodeError:
+            uploaded_incassi.seek(0)
+            try:
+                df_incassi = pd.read_csv(uploaded_incassi, header=0, encoding='utf-8-sig')
+            except UnicodeDecodeError:
+                uploaded_incassi.seek(0)
+                try:
+                    df_incassi = pd.read_csv(uploaded_incassi, header=0, encoding='latin-1')
+                except UnicodeDecodeError:
+                    uploaded_incassi.seek(0)
+                    df_incassi = pd.read_csv(uploaded_incassi, header=0, encoding='cp1252')
         
         df_processato, messaggio = processa_csv_incassi(df_incassi)
         
@@ -421,7 +465,7 @@ st.markdown("---")
 # STEP 3: Generazione XML
 st.header("🚀 STEP 3: Generazione XML SEPA CBI")
 
-if st.session_state.dati_azienda_caricati and st.session_state.lista_incassi and st.session_state.data_addebito:
+if st.session_state.dati_azienda_caricati and st.session_state.lista_incassi and st.session_state.data_addebito and st.session_state.id_flusso:
     st.info("✅ Tutti i dati sono pronti! Puoi generare il file XML SEPA CBI.")
     
     if st.button("🚀 Genera XML SEPA CBI", type="primary", use_container_width=True):
@@ -429,7 +473,8 @@ if st.session_state.dati_azienda_caricati and st.session_state.lista_incassi and
             xml_content = genera_xml_cbi(
                 st.session_state.dati_azienda_caricati,
                 st.session_state.lista_incassi,
-                st.session_state.data_addebito
+                st.session_state.data_addebito,
+                st.session_state.id_flusso
             )
             
             filename = f"SEPA_SDD_CBI_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xml"
@@ -454,6 +499,8 @@ else:
     messaggi = []
     if not st.session_state.dati_azienda_caricati:
         messaggi.append("- Dati aziendali")
+    if not st.session_state.id_flusso:
+        messaggi.append("- ID Flusso")
     if not st.session_state.data_addebito:
         messaggi.append("- Data addebito")
     if not st.session_state.lista_incassi:
