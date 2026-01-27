@@ -137,24 +137,33 @@ def processa_csv_incassi(df):
     
     required_fields = ['nome_debitore', 'codice_fiscale', 'iban', 'importo', 'causale', 'data_firma_mandato']
     
-    if df.columns[0] not in required_fields:
-        if len(df.columns) == len(required_fields):
-            df.columns = required_fields
-        else:
-            return None, f"Il CSV deve avere {len(required_fields)} colonne"
+    # Controlla se la prima riga sembra essere dati invece che intestazioni
+    # Se la prima colonna NON contiene "nome" o simili, probabilmente non ci sono intestazioni
+    prima_colonna = str(df.columns[0]).lower()
     
+    if prima_colonna not in ['nome_debitore', 'nome', 'debitore'] and len(df.columns) == len(required_fields):
+        # Non ci sono intestazioni, le aggiungiamo
+        df.columns = required_fields
+        st.info("ℹ️ Intestazioni colonne aggiunte automaticamente")
+    
+    # Verifica che tutti i campi siano presenti
     for field in required_fields:
         if field not in df.columns:
-            return None, f"Campo mancante: {field}"
+            return None, f"Campo mancante: {field}. Assicurati che il CSV abbia {len(required_fields)} colonne nell'ordine corretto."
     
+    # Normalizza le date
     df['data_firma_mandato'] = df['data_firma_mandato'].apply(normalizza_data)
+    
+    # Normalizza gli importi
     df['importo'] = df['importo'].apply(normalizza_importo)
     
+    # Verifica che tutti i campi obbligatori siano compilati (esclusa data che viene auto-riempita)
     for idx, row in df.iterrows():
-        for field in required_fields:
+        for field in ['nome_debitore', 'codice_fiscale', 'iban', 'importo', 'causale']:
             if pd.isna(row[field]) or str(row[field]).strip() == '':
                 return None, f"Campo vuoto nella riga {idx+2}: {field}"
     
+    # Aggrega le righe per lo stesso debitore
     df_aggregato = aggrega_incassi(df)
     
     return df_aggregato, "OK"
@@ -419,20 +428,20 @@ with col2:
 
 if uploaded_incassi is not None:
     try:
-        # Prova diversi encoding
+        # Prova diversi encoding e considera il caso senza header
         try:
-            df_incassi = pd.read_csv(uploaded_incassi, header=0, encoding='utf-8')
+            df_incassi = pd.read_csv(uploaded_incassi, encoding='utf-8')
         except UnicodeDecodeError:
             uploaded_incassi.seek(0)
             try:
-                df_incassi = pd.read_csv(uploaded_incassi, header=0, encoding='utf-8-sig')
+                df_incassi = pd.read_csv(uploaded_incassi, encoding='utf-8-sig')
             except UnicodeDecodeError:
                 uploaded_incassi.seek(0)
                 try:
-                    df_incassi = pd.read_csv(uploaded_incassi, header=0, encoding='latin-1')
+                    df_incassi = pd.read_csv(uploaded_incassi, encoding='latin-1')
                 except UnicodeDecodeError:
                     uploaded_incassi.seek(0)
-                    df_incassi = pd.read_csv(uploaded_incassi, header=0, encoding='cp1252')
+                    df_incassi = pd.read_csv(uploaded_incassi, encoding='cp1252')
         
         df_processato, messaggio = processa_csv_incassi(df_incassi)
         
