@@ -137,19 +137,49 @@ def processa_csv_incassi(df):
     
     required_fields = ['nome_debitore', 'codice_fiscale', 'iban', 'importo', 'causale', 'data_firma_mandato']
     
+    # Debug: mostra info sul CSV caricato
+    st.info(f"📊 CSV caricato: {len(df.columns)} colonne, {len(df)} righe")
+    
     # Controlla se la prima riga sembra essere dati invece che intestazioni
-    # Se la prima colonna NON contiene "nome" o simili, probabilmente non ci sono intestazioni
-    prima_colonna = str(df.columns[0]).lower()
+    prima_colonna = str(df.columns[0]).lower().strip()
     
-    if prima_colonna not in ['nome_debitore', 'nome', 'debitore'] and len(df.columns) == len(required_fields):
-        # Non ci sono intestazioni, le aggiungiamo
-        df.columns = required_fields
-        st.info("ℹ️ Intestazioni colonne aggiunte automaticamente")
-    
-    # Verifica che tutti i campi siano presenti
-    for field in required_fields:
-        if field not in df.columns:
-            return None, f"Campo mancante: {field}. Assicurati che il CSV abbia {len(required_fields)} colonne nell'ordine corretto."
+    # Se il numero di colonne è corretto ma i nomi non corrispondono, sostituisci le intestazioni
+    if len(df.columns) == len(required_fields):
+        # Controlla se almeno una delle colonne ha un nome che sembra un'intestazione valida
+        colonne_valide = any(col.lower().strip() in ['nome_debitore', 'nome', 'debitore', 'codice_fiscale', 'iban', 'importo', 'causale', 'data_firma_mandato'] 
+                           for col in df.columns)
+        
+        if not colonne_valide:
+            # Nessuna intestazione valida trovata, le sostituiamo
+            df.columns = required_fields
+            st.success("✅ Intestazioni colonne aggiunte automaticamente")
+        else:
+            # Ci sono intestazioni ma potrebbero avere nomi leggermente diversi
+            # Mappiamo i nomi delle colonne ai campi richiesti
+            mapping = {}
+            for col in df.columns:
+                col_lower = col.lower().strip()
+                if 'nome' in col_lower or 'debitore' in col_lower:
+                    mapping[col] = 'nome_debitore'
+                elif 'codice' in col_lower or 'fiscale' in col_lower or 'cf' in col_lower or 'piva' in col_lower or 'partita' in col_lower:
+                    mapping[col] = 'codice_fiscale'
+                elif 'iban' in col_lower:
+                    mapping[col] = 'iban'
+                elif 'importo' in col_lower or 'ammontare' in col_lower or 'totale' in col_lower:
+                    mapping[col] = 'importo'
+                elif 'causale' in col_lower or 'descrizione' in col_lower or 'motivo' in col_lower:
+                    mapping[col] = 'causale'
+                elif 'data' in col_lower or 'firma' in col_lower or 'mandato' in col_lower:
+                    mapping[col] = 'data_firma_mandato'
+            
+            if len(mapping) == len(required_fields):
+                df = df.rename(columns=mapping)
+                st.success("✅ Intestazioni colonne mappate automaticamente")
+            else:
+                df.columns = required_fields
+                st.warning("⚠️ Alcune intestazioni non riconosciute, applicate intestazioni standard")
+    else:
+        return None, f"Il CSV deve avere {len(required_fields)} colonne, ne ha {len(df.columns)}"
     
     # Normalizza le date
     df['data_firma_mandato'] = df['data_firma_mandato'].apply(normalizza_data)
