@@ -136,6 +136,9 @@ def processa_csv_incassi(df):
     
     st.info(f"📊 CSV caricato: {len(df.columns)} colonne, {len(df)} righe")
     
+    # Debug: mostra le prime colonne
+    st.write(f"🔍 Prime colonne rilevate: {list(df.columns[:3])}")
+    
     # Se il dataframe non ha i nomi delle colonne corretti, assegnali
     if len(df.columns) == len(required_fields):
         # Se le colonne sono numeriche (0, 1, 2...) significa che non c'erano intestazioni
@@ -145,6 +148,9 @@ def processa_csv_incassi(df):
         else:
             # Le colonne hanno nomi stringa
             prima_colonna = str(df.columns[0]).lower().strip()
+            
+            # Debug: mostra la prima riga di dati
+            st.write(f"🔍 Prima riga dati: {df.iloc[0].to_dict()}")
             
             # Controlla se la prima colonna ha un nome che sembra un'intestazione
             if prima_colonna not in ['nome_debitore', 'nome', 'debitore']:
@@ -193,6 +199,7 @@ def processa_csv_incassi(df):
         for field in ['nome_debitore', 'codice_fiscale', 'iban', 'importo', 'causale']:
             valore = str(row[field]).strip() if not pd.isna(row[field]) else ''
             if valore == '' or valore == 'nan':
+                st.error(f"⚠️ Debug riga {idx+2}: {field} = '{row[field]}' (tipo: {type(row[field])})")
                 return None, f"Campo vuoto nella riga {idx+2}: {field}"
     
     # Aggrega le righe per lo stesso debitore
@@ -451,8 +458,11 @@ if uploaded_incassi is not None:
             file_obj.seek(0)
             prima_riga = file_obj.readline().decode('utf-8', errors='ignore').lower()
             file_obj.seek(0)
-            parole_chiave = ['nome', 'debitore', 'codice', 'fiscale', 'iban', 'importo', 'causale', 'data', 'mandato']
-            return any(parola in prima_riga for parola in parole_chiave)
+            # Parole chiave più specifiche per identificare intestazioni
+            parole_chiave = ['nome_debitore', 'debitore', 'codice_fiscale', 'causale', 'data_firma']
+            # Deve avere almeno 2 parole chiave per essere considerata intestazione
+            conteggio = sum(1 for parola in parole_chiave if parola in prima_riga)
+            return conteggio >= 2
         
         df_incassi = None
         encodings = ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252']
