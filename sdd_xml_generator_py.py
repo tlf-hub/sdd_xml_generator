@@ -31,7 +31,6 @@ def pulisci_iban(iban):
 def normalizza_data(data_str):
     """Normalizza una data nel formato YYYY-MM-DD"""
     if pd.isna(data_str) or str(data_str).strip() == '':
-        # Se la data è vuota, usa la data di oggi
         return datetime.now().strftime('%Y-%m-%d')
     
     data_str = str(data_str).strip()
@@ -49,7 +48,6 @@ def normalizza_data(data_str):
         except ValueError:
             continue
     
-    # Se nessun formato funziona, usa la data di oggi
     return datetime.now().strftime('%Y-%m-%d')
 
 def normalizza_importo(importo_str):
@@ -127,7 +125,6 @@ def valida_dati_aziendali(df):
         if df[field].iloc[0] == '' or pd.isna(df[field].iloc[0]):
             return False, f"Campo vuoto: {field}"
     
-    # Converti ABI in stringa con zero padding
     df['abi'] = df['abi'].astype(str).str.zfill(5)
     
     return True, "OK"
@@ -137,25 +134,18 @@ def processa_csv_incassi(df):
     
     required_fields = ['nome_debitore', 'codice_fiscale', 'iban', 'importo', 'causale', 'data_firma_mandato']
     
-    # Debug: mostra info sul CSV caricato
     st.info(f"📊 CSV caricato: {len(df.columns)} colonne, {len(df)} righe")
     
-    # Controlla se la prima riga sembra essere dati invece che intestazioni
     prima_colonna = str(df.columns[0]).lower().strip()
     
-    # Se il numero di colonne è corretto ma i nomi non corrispondono, sostituisci le intestazioni
     if len(df.columns) == len(required_fields):
-        # Controlla se almeno una delle colonne ha un nome che sembra un'intestazione valida
         colonne_valide = any(col.lower().strip() in ['nome_debitore', 'nome', 'debitore', 'codice_fiscale', 'iban', 'importo', 'causale', 'data_firma_mandato'] 
                            for col in df.columns)
         
         if not colonne_valide:
-            # Nessuna intestazione valida trovata, le sostituiamo
             df.columns = required_fields
             st.success("✅ Intestazioni colonne aggiunte automaticamente")
         else:
-            # Ci sono intestazioni ma potrebbero avere nomi leggermente diversi
-            # Mappiamo i nomi delle colonne ai campi richiesti
             mapping = {}
             for col in df.columns:
                 col_lower = col.lower().strip()
@@ -181,19 +171,14 @@ def processa_csv_incassi(df):
     else:
         return None, f"Il CSV deve avere {len(required_fields)} colonne, ne ha {len(df.columns)}"
     
-    # Normalizza le date
     df['data_firma_mandato'] = df['data_firma_mandato'].apply(normalizza_data)
-    
-    # Normalizza gli importi
     df['importo'] = df['importo'].apply(normalizza_importo)
     
-    # Verifica che tutti i campi obbligatori siano compilati (esclusa data che viene auto-riempita)
     for idx, row in df.iterrows():
         for field in ['nome_debitore', 'codice_fiscale', 'iban', 'importo', 'causale']:
             if pd.isna(row[field]) or str(row[field]).strip() == '':
                 return None, f"Campo vuoto nella riga {idx+2}: {field}"
     
-    # Aggrega le righe per lo stesso debitore
     df_aggregato = aggrega_incassi(df)
     
     return df_aggregato, "OK"
@@ -204,25 +189,20 @@ def genera_xml_cbi(dati_aziendali, incassi, data_addebito, id_flusso):
     numero_transazioni = len(incassi)
     totale_importo = sum(float(inc['importo']) for inc in incassi)
     
-    # Message ID
     msg_id = genera_message_id(id_flusso)
     
-    # Root element
     root = Element('CBIBdySDDReq')
     root.set('xmlns', 'urn:CBI:xsd:CBIBdySDDReq.00.01.00')
     root.set('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance')
     root.set('xsi:schemaLocation', 'urn:CBI:xsd:CBIBdySDDReq.00.01.00 CBIBdySDDReq.00.01.00.xsd')
     
-    # PhyMsgInf
     phy_msg_inf = SubElement(root, 'PhyMsgInf')
     SubElement(phy_msg_inf, 'PhyMsgTpCd').text = 'INC-SDDC-01'
     SubElement(phy_msg_inf, 'NbOfLogMsg').text = '1'
     
-    # CBIEnvelSDDReqLogMsg
     cbi_envel = SubElement(root, 'CBIEnvelSDDReqLogMsg')
     cbi_sdd_req = SubElement(cbi_envel, 'CBISDDReqLogMsg')
     
-    # GrpHdr
     grp_hdr = SubElement(cbi_sdd_req, 'GrpHdr')
     grp_hdr.set('xmlns', 'urn:CBI:xsd:CBISDDReqLogMsg.00.01.00')
     
@@ -240,14 +220,12 @@ def genera_xml_cbi(dati_aziendali, incassi, data_addebito, id_flusso):
     SubElement(othr, 'Id').text = id_flusso
     SubElement(othr, 'Issr').text = 'CBI'
     
-    # PmtInf
     pmt_inf = SubElement(cbi_sdd_req, 'PmtInf')
     pmt_inf.set('xmlns', 'urn:CBI:xsd:CBISDDReqLogMsg.00.01.00')
     
     SubElement(pmt_inf, 'PmtInfId').text = 'SOTTODISTINTA1'
     SubElement(pmt_inf, 'PmtMtd').text = 'DD'
     
-    # PmtTpInf
     pmt_tp_inf = SubElement(pmt_inf, 'PmtTpInf')
     svc_lvl = SubElement(pmt_tp_inf, 'SvcLvl')
     SubElement(svc_lvl, 'Cd').text = 'SEPA'
@@ -257,7 +235,6 @@ def genera_xml_cbi(dati_aziendali, incassi, data_addebito, id_flusso):
     
     SubElement(pmt_inf, 'ReqdColltnDt').text = data_addebito
     
-    # Cdtr
     cdtr = SubElement(pmt_inf, 'Cdtr')
     SubElement(cdtr, 'Nm').text = dati_aziendali['nome_azienda']
     
@@ -265,18 +242,15 @@ def genera_xml_cbi(dati_aziendali, incassi, data_addebito, id_flusso):
     SubElement(pstl_adr, 'Ctry').text = 'IT'
     SubElement(pstl_adr, 'AdrLine').text = dati_aziendali['indirizzo_azienda']
     
-    # CdtrAcct
     cdtr_acct = SubElement(pmt_inf, 'CdtrAcct')
     cdtr_acct_id = SubElement(cdtr_acct, 'Id')
     SubElement(cdtr_acct_id, 'IBAN').text = pulisci_iban(dati_aziendali['iban'])
     
-    # CdtrAgt
     cdtr_agt = SubElement(pmt_inf, 'CdtrAgt')
     fin_instn_id = SubElement(cdtr_agt, 'FinInstnId')
     clr_sys_mmb_id = SubElement(fin_instn_id, 'ClrSysMmbId')
     SubElement(clr_sys_mmb_id, 'MmbId').text = str(dati_aziendali['abi']).zfill(5)
     
-    # CdtrSchmeId
     cdtr_schme_id = SubElement(pmt_inf, 'CdtrSchmeId')
     SubElement(cdtr_schme_id, 'Nm').text = dati_aziendali['nome_azienda']
     
@@ -287,21 +261,17 @@ def genera_xml_cbi(dati_aziendali, incassi, data_addebito, id_flusso):
     schme_nm = SubElement(othr_schme, 'SchmeNm')
     SubElement(schme_nm, 'Prtry').text = 'SEPA'
     
-    # DrctDbtTxInf per ogni incasso
     for idx, incasso in enumerate(incassi, 1):
         drct_dbt_tx_inf = SubElement(pmt_inf, 'DrctDbtTxInf')
         
-        # PmtId
         pmt_id = SubElement(drct_dbt_tx_inf, 'PmtId')
         SubElement(pmt_id, 'InstrId').text = f'{idx:07d}'
         SubElement(pmt_id, 'EndToEndId').text = genera_end_to_end_id(msg_id, idx)
         
-        # InstdAmt
         instd_amt = SubElement(drct_dbt_tx_inf, 'InstdAmt')
         instd_amt.set('Ccy', 'EUR')
         instd_amt.text = f'{float(incasso["importo"]):.2f}'
         
-        # DrctDbtTx
         drct_dbt_tx = SubElement(drct_dbt_tx_inf, 'DrctDbtTx')
         mndt_rltd_inf = SubElement(drct_dbt_tx, 'MndtRltdInf')
         SubElement(mndt_rltd_inf, 'MndtId').text = genera_mandate_id(
@@ -310,7 +280,6 @@ def genera_xml_cbi(dati_aziendali, incassi, data_addebito, id_flusso):
         )
         SubElement(mndt_rltd_inf, 'DtOfSgntr').text = incasso['data_firma_mandato']
         
-        # Dbtr
         dbtr = SubElement(drct_dbt_tx_inf, 'Dbtr')
         SubElement(dbtr, 'Nm').text = incasso['nome_debitore']
         
@@ -320,21 +289,16 @@ def genera_xml_cbi(dati_aziendali, incassi, data_addebito, id_flusso):
         SubElement(dbtr_othr, 'Id').text = incasso['codice_fiscale']
         SubElement(dbtr_othr, 'Issr').text = 'ADE'
         
-        # DbtrAcct
         dbtr_acct = SubElement(drct_dbt_tx_inf, 'DbtrAcct')
         dbtr_acct_id = SubElement(dbtr_acct, 'Id')
         SubElement(dbtr_acct_id, 'IBAN').text = pulisci_iban(incasso['iban'])
         
-        # RmtInf
         rmt_inf = SubElement(drct_dbt_tx_inf, 'RmtInf')
-        # Genera un numero progressivo univoco per la causale
         causale_completa = f"{idx:019d} - {incasso['causale']}"
         SubElement(rmt_inf, 'Ustrd').text = causale_completa
     
-    # Converti in stringa XML formattata
     xml_str = minidom.parseString(tostring(root)).toprettyxml(indent="", encoding="UTF-8")
     
-    # Rimuovi le righe vuote extra
     xml_lines = xml_str.decode('utf-8').split('\n')
     xml_lines = [line for line in xml_lines if line.strip()]
     xml_str = '\n'.join(xml_lines).encode('utf-8')
@@ -369,7 +333,6 @@ with col2:
 
 if uploaded_aziendale is not None:
     try:
-        # Prova diversi encoding
         try:
             df_aziendale = pd.read_csv(uploaded_aziendale, encoding='utf-8')
         except UnicodeDecodeError:
@@ -458,21 +421,15 @@ with col2:
 
 if uploaded_incassi is not None:
     try:
-        # Funzione per rilevare il separatore
         def rileva_separatore(file_obj):
             file_obj.seek(0)
             sample = file_obj.read(1024).decode('utf-8', errors='ignore')
             file_obj.seek(0)
-            
-            # Conta i possibili separatori
             separatori = [',', ';', '\t', '|']
             conteggi = {sep: sample.count(sep) for sep in separatori}
-            
-            # Ritorna il separatore più frequente
             sep_migliore = max(conteggi, key=conteggi.get)
             return sep_migliore if conteggi[sep_migliore] > 0 else ','
         
-        # Prova diversi encoding
         df_incassi = None
         encodings = ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252']
         
@@ -487,14 +444,9 @@ if uploaded_incassi is not None:
             except (UnicodeDecodeError, pd.errors.ParserError):
                 continue
         
-        if df_incassi is None:
-            st.error("❌ Impossibile leggere il file CSV. Verifica il formato del file.")
-        else:
-        if df_incassi is None:
-            st.error("❌ Impossibile leggere il file CSV. Verifica il formato del file.")
-        else:
+        if df_incassi is not None:
             df_processato, messaggio = processa_csv_incassi(df_incassi)
-        
+            
             if df_processato is not None:
                 st.session_state.lista_incassi = df_processato.to_dict('records')
                 
@@ -516,6 +468,9 @@ if uploaded_incassi is not None:
                 st.info("ℹ️ I debitori con lo stesso IBAN sono stati aggregati sommando gli importi e unendo le causali")
             else:
                 st.error(f"❌ Errore: {messaggio}")
+        else:
+            st.error("❌ Impossibile leggere il file CSV. Verifica il formato del file.")
+                
     except Exception as e:
         st.error(f"❌ Errore nella lettura del file: {str(e)}")
 
