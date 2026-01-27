@@ -458,44 +458,64 @@ with col2:
 
 if uploaded_incassi is not None:
     try:
-        # Prova diversi encoding e considera il caso senza header
-        try:
-            df_incassi = pd.read_csv(uploaded_incassi, encoding='utf-8')
-        except UnicodeDecodeError:
-            uploaded_incassi.seek(0)
+        # Funzione per rilevare il separatore
+        def rileva_separatore(file_obj):
+            file_obj.seek(0)
+            sample = file_obj.read(1024).decode('utf-8', errors='ignore')
+            file_obj.seek(0)
+            
+            # Conta i possibili separatori
+            separatori = [',', ';', '\t', '|']
+            conteggi = {sep: sample.count(sep) for sep in separatori}
+            
+            # Ritorna il separatore più frequente
+            sep_migliore = max(conteggi, key=conteggi.get)
+            return sep_migliore if conteggi[sep_migliore] > 0 else ','
+        
+        # Prova diversi encoding
+        df_incassi = None
+        encodings = ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252']
+        
+        for encoding in encodings:
             try:
-                df_incassi = pd.read_csv(uploaded_incassi, encoding='utf-8-sig')
-            except UnicodeDecodeError:
                 uploaded_incassi.seek(0)
-                try:
-                    df_incassi = pd.read_csv(uploaded_incassi, encoding='latin-1')
-                except UnicodeDecodeError:
-                    uploaded_incassi.seek(0)
-                    df_incassi = pd.read_csv(uploaded_incassi, encoding='cp1252')
+                sep = rileva_separatore(uploaded_incassi)
+                uploaded_incassi.seek(0)
+                df_incassi = pd.read_csv(uploaded_incassi, encoding=encoding, sep=sep)
+                st.info(f"🔍 Rilevato separatore: '{sep}' | Encoding: {encoding}")
+                break
+            except (UnicodeDecodeError, pd.errors.ParserError):
+                continue
         
-        df_processato, messaggio = processa_csv_incassi(df_incassi)
-        
-        if df_processato is not None:
-            st.session_state.lista_incassi = df_processato.to_dict('records')
-            
-            totale = sum(float(inc['importo']) for inc in st.session_state.lista_incassi)
-            
-            st.success(f"✅ CSV processato! {len(st.session_state.lista_incassi)} debitori aggregati")
-            
-            col_a, col_b, col_c = st.columns(3)
-            with col_a:
-                st.metric("Numero Debitori", len(st.session_state.lista_incassi))
-            with col_b:
-                st.metric("Totale Incassi", f"€ {totale:.2f}")
-            with col_c:
-                st.metric("Media per Debitore", f"€ {totale/len(st.session_state.lista_incassi):.2f}")
-            
-            with st.expander("🔍 Visualizza Debitori Aggregati"):
-                st.dataframe(df_processato, use_container_width=True)
-            
-            st.info("ℹ️ I debitori con lo stesso IBAN sono stati aggregati sommando gli importi e unendo le causali")
+        if df_incassi is None:
+            st.error("❌ Impossibile leggere il file CSV. Verifica il formato del file.")
         else:
-            st.error(f"❌ Errore: {messaggio}")
+        if df_incassi is None:
+            st.error("❌ Impossibile leggere il file CSV. Verifica il formato del file.")
+        else:
+            df_processato, messaggio = processa_csv_incassi(df_incassi)
+        
+            if df_processato is not None:
+                st.session_state.lista_incassi = df_processato.to_dict('records')
+                
+                totale = sum(float(inc['importo']) for inc in st.session_state.lista_incassi)
+                
+                st.success(f"✅ CSV processato! {len(st.session_state.lista_incassi)} debitori aggregati")
+                
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    st.metric("Numero Debitori", len(st.session_state.lista_incassi))
+                with col_b:
+                    st.metric("Totale Incassi", f"€ {totale:.2f}")
+                with col_c:
+                    st.metric("Media per Debitore", f"€ {totale/len(st.session_state.lista_incassi):.2f}")
+                
+                with st.expander("🔍 Visualizza Debitori Aggregati"):
+                    st.dataframe(df_processato, use_container_width=True)
+                
+                st.info("ℹ️ I debitori con lo stesso IBAN sono stati aggregati sommando gli importi e unendo le causali")
+            else:
+                st.error(f"❌ Errore: {messaggio}")
     except Exception as e:
         st.error(f"❌ Errore nella lettura del file: {str(e)}")
 
