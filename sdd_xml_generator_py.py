@@ -188,6 +188,9 @@ def processa_csv_incassi(df):
     else:
         return None, f"Il CSV deve avere {len(required_fields)} colonne, ne ha {len(df.columns)}"
     
+    # IMPORTANTE: Converti il codice fiscale in stringa
+    df['codice_fiscale'] = df['codice_fiscale'].astype(str).str.strip()
+    
     # Normalizza le date (riempie con data odierna se vuoto)
     df['data_firma_mandato'] = df['data_firma_mandato'].apply(normalizza_data)
     
@@ -307,12 +310,12 @@ def genera_xml_cbi(dati_aziendali, incassi, data_addebito, id_flusso):
         SubElement(mndt_rltd_inf, 'DtOfSgntr').text = incasso['data_firma_mandato']
         
         dbtr = SubElement(drct_dbt_tx_inf, 'Dbtr')
-        SubElement(dbtr, 'Nm').text = incasso['nome_debitore']
+        SubElement(dbtr, 'Nm').text = str(incasso['nome_debitore'])
         
         dbtr_id = SubElement(dbtr, 'Id')
         dbtr_org_id = SubElement(dbtr_id, 'OrgId')
         dbtr_othr = SubElement(dbtr_org_id, 'Othr')
-        SubElement(dbtr_othr, 'Id').text = incasso['codice_fiscale']
+        SubElement(dbtr_othr, 'Id').text = str(incasso['codice_fiscale'])
         SubElement(dbtr_othr, 'Issr').text = 'ADE'
         
         dbtr_acct = SubElement(drct_dbt_tx_inf, 'DbtrAcct')
