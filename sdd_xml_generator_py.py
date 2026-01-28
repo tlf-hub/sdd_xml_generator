@@ -210,6 +210,8 @@ def processa_csv_incassi(df):
 def genera_xml_cbi(dati_aziendali, incassi, data_addebito, id_flusso):
     """Genera il file XML SEPA SDD in formato CBI"""
     
+    import html
+    
     numero_transazioni = len(incassi)
     totale_importo = sum(float(inc['importo']) for inc in incassi)
     
@@ -321,13 +323,21 @@ def genera_xml_cbi(dati_aziendali, incassi, data_addebito, id_flusso):
         causale_completa = f"{idx:019d} - {incasso['causale']}"
         SubElement(rmt_inf, 'Ustrd').text = causale_completa
     
-    xml_str = minidom.parseString(tostring(root)).toprettyxml(indent="", encoding="UTF-8")
+    # Genera XML con formattazione identica al file di riferimento
+    xml_str = tostring(root, encoding='UTF-8')
+    dom = minidom.parseString(xml_str)
     
-    xml_lines = xml_str.decode('utf-8').split('\n')
-    xml_lines = [line for line in xml_lines if line.strip()]
-    xml_str = '\n'.join(xml_lines).encode('utf-8')
+    # Formatta con indentazione
+    pretty_xml = dom.toprettyxml(indent="", encoding="UTF-8")
     
-    return xml_str
+    # Rimuovi righe vuote extra e la dichiarazione XML duplicata
+    lines = pretty_xml.decode('utf-8').split('\n')
+    lines = [line for line in lines if line.strip()]
+    
+    # Ricostruisci l'XML con la dichiarazione corretta
+    final_xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + '\n'.join(lines[1:])
+    
+    return final_xml.encode('utf-8')
 
 # UI principale
 st.title("💰 Generatore XML SEPA SDD CBI per Incassi Bancari")
