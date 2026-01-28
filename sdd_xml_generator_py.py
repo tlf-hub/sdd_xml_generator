@@ -411,12 +411,196 @@ id_flusso_input = st.text_input(
     "Inserisci l'ID Flusso",
     value="",
     max_chars=20,
-    help="ID univoco per identificare il flusso (es. FLX9J372). Può essere cambiato per ogni invio."
+    help="ID univoco per identificare il flusso (es. FLX9J372). Deve essere alfanumerico e massimo 8-10 caratteri."
 )
 
 if id_flusso_input:
-    st.session_state.id_flusso = id_flusso_input
-    st.success(f"✅ ID Flusso impostato: {st.session_state.id_flusso}")
+    # Valida l'ID flusso
+    if not id_flusso_input.strip():
+        st.error("❌ L'ID Flusso non può essere vuoto")
+    elif len(id_flusso_input) > 12:
+        st.error("❌ L'ID Flusso deve essere massimo 12 caratteri")
+    elif not re.match(r'^[A-Z0-9]+
+
+st.markdown("---")
+
+st.subheader("📅 Data Addebito su Conto Corrente")
+data_addebito_input = st.date_input(
+    "Seleziona la data di addebito",
+    value=None,
+    min_value=datetime.now().date(),
+    help="Data in cui i fondi saranno addebitati dai conti dei debitori"
+)
+
+if data_addebito_input:
+    st.session_state.data_addebito = data_addebito_input.strftime('%Y-%m-%d')
+    st.success(f"✅ Data addebito impostata: {st.session_state.data_addebito}")
+
+st.markdown("---")
+
+st.subheader("📄 Caricamento CSV Incassi")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    template_incassi = crea_template_incassi()
+    st.download_button(
+        label="📥 Scarica Template CSV Incassi",
+        data=template_incassi,
+        file_name="template_incassi.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+
+with col2:
+    uploaded_incassi = st.file_uploader(
+        "📂 Carica CSV Incassi",
+        type=['csv'],
+        key="upload_incassi",
+        help="Il CSV può avere o meno intestazioni. Date e importi saranno normalizzati automaticamente."
+    )
+
+if uploaded_incassi is not None:
+    try:
+        def rileva_separatore(file_obj, encoding='utf-8'):
+            file_obj.seek(0)
+            try:
+                sample = file_obj.read(2048).decode(encoding, errors='ignore')
+            except:
+                sample = file_obj.read(2048).decode('utf-8', errors='ignore')
+            file_obj.seek(0)
+            separatori = [',', ';', '\t', '|']
+            conteggi = {sep: sample.count(sep) for sep in separatori}
+            sep_migliore = max(conteggi, key=conteggi.get)
+            return sep_migliore if conteggi[sep_migliore] > 0 else ','
+        
+        def ha_intestazioni(file_obj, sep, encoding='utf-8'):
+            file_obj.seek(0)
+            try:
+                prima_riga = file_obj.readline().decode(encoding, errors='ignore').lower()
+            except:
+                prima_riga = file_obj.readline().decode('utf-8', errors='ignore').lower()
+            file_obj.seek(0)
+            parole_chiave = ['nome_debitore', 'debitore', 'codice_fiscale', 'causale', 'data_firma']
+            conteggio = sum(1 for parola in parole_chiave if parola in prima_riga)
+            return conteggio >= 2
+        
+        df_incassi = None
+        # Aggiungi UTF-16 e UTF-16-LE agli encoding da provare
+        encodings = ['utf-16', 'utf-16-le', 'utf-8', 'utf-8-sig', 'latin-1', 'cp1252']
+        
+        for encoding in encodings:
+            try:
+                uploaded_incassi.seek(0)
+                sep = rileva_separatore(uploaded_incassi, encoding)
+                has_header = ha_intestazioni(uploaded_incassi, sep, encoding)
+                uploaded_incassi.seek(0)
+                
+                if has_header:
+                    df_incassi = pd.read_csv(uploaded_incassi, encoding=encoding, sep=sep)
+                    st.info(f"🔍 Rilevato separatore: '{sep}' | Encoding: {encoding} | Con intestazioni")
+                else:
+                    df_incassi = pd.read_csv(uploaded_incassi, encoding=encoding, sep=sep, header=None)
+                    st.info(f"🔍 Rilevato separatore: '{sep}' | Encoding: {encoding} | Senza intestazioni")
+                
+                # Verifica che il dataframe sia valido (non tutte colonne NaN)
+                if df_incassi is not None and not df_incassi.iloc[0].isna().all():
+                    break
+                else:
+                    df_incassi = None
+            except (UnicodeDecodeError, pd.errors.ParserError, Exception):
+                continue
+        
+        if df_incassi is not None:
+            df_processato, messaggio = processa_csv_incassi(df_incassi)
+            
+            if df_processato is not None:
+                st.session_state.lista_incassi = df_processato.to_dict('records')
+                
+                totale = sum(float(inc['importo']) for inc in st.session_state.lista_incassi)
+                
+                st.success(f"✅ CSV processato! {len(st.session_state.lista_incassi)} debitori aggregati")
+                
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    st.metric("Numero Debitori", len(st.session_state.lista_incassi))
+                with col_b:
+                    st.metric("Totale Incassi", f"€ {totale:.2f}")
+                with col_c:
+                    st.metric("Media per Debitore", f"€ {totale/len(st.session_state.lista_incassi):.2f}")
+                
+                with st.expander("🔍 Visualizza Debitori Aggregati"):
+                    st.dataframe(df_processato, use_container_width=True)
+                
+                st.info("ℹ️ I debitori con lo stesso IBAN sono stati aggregati sommando gli importi e unendo le causali")
+            else:
+                st.error(f"❌ Errore: {messaggio}")
+        else:
+            st.error("❌ Impossibile leggere il file CSV. Verifica il formato del file.")
+                
+    except Exception as e:
+        st.error(f"❌ Errore nella lettura del file: {str(e)}")
+
+st.markdown("---")
+
+# STEP 3: Generazione XML
+st.header("🚀 STEP 3: Generazione XML SEPA CBI")
+
+if st.session_state.dati_azienda_caricati and st.session_state.lista_incassi and st.session_state.data_addebito and st.session_state.id_flusso:
+    st.info("✅ Tutti i dati sono pronti! Puoi generare il file XML SEPA CBI.")
+    
+    if st.button("🚀 Genera XML SEPA CBI", type="primary", use_container_width=True):
+        try:
+            xml_content = genera_xml_cbi(
+                st.session_state.dati_azienda_caricati,
+                st.session_state.lista_incassi,
+                st.session_state.data_addebito,
+                st.session_state.id_flusso
+            )
+            
+            filename = f"SEPA_SDD_CBI_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xml"
+            
+            st.download_button(
+                label="💾 Scarica File XML",
+                data=xml_content,
+                file_name=filename,
+                mime="application/xml",
+                use_container_width=True
+            )
+            
+            st.success("✅ File XML SEPA CBI generato con successo!")
+            st.balloons()
+            
+            with st.expander("📄 Anteprima XML"):
+                st.code(xml_content.decode('utf-8'), language='xml')
+            
+        except Exception as e:
+            st.error(f"❌ Errore nella generazione del file XML: {str(e)}")
+else:
+    messaggi = []
+    if not st.session_state.dati_azienda_caricati:
+        messaggi.append("- Dati aziendali")
+    if not st.session_state.id_flusso:
+        messaggi.append("- ID Flusso")
+    if not st.session_state.data_addebito:
+        messaggi.append("- Data addebito")
+    if not st.session_state.lista_incassi:
+        messaggi.append("- CSV incassi")
+    
+    st.warning(f"⚠️ Completa i seguenti passaggi:\n" + "\n".join(messaggi))
+
+st.markdown("---")
+st.info("ℹ️ Il file XML generato è compatibile con il formato CBI (Corporate Banking Interbancario) e pronto per essere caricato nel tuo sistema di home banking.")
+
+# Footer
+st.markdown("---")
+st.caption("Generatore XML SEPA SDD CBI v3.0 | Formato: CBIBdySDDReq.00.01.00 | Aggregazione automatica debitori"), id_flusso_input):
+        st.warning("⚠️ L'ID Flusso dovrebbe contenere solo lettere maiuscole e numeri")
+        st.session_state.id_flusso = id_flusso_input
+        st.info(f"✅ ID Flusso impostato: {st.session_state.id_flusso}")
+    else:
+        st.session_state.id_flusso = id_flusso_input
+        st.success(f"✅ ID Flusso impostato: {st.session_state.id_flusso}")
 
 st.markdown("---")
 
