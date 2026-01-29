@@ -433,7 +433,7 @@ if id_flusso_input:
         st.error("❌ L'ID Flusso non può essere vuoto")
     elif len(id_flusso_input) > 12:
         st.error("❌ L'ID Flusso deve essere massimo 12 caratteri")
-    elif not re.match(r'^[A-Z0-9]+
+    elif not re.match(r'^[A-Z0-9]+$
 
 st.markdown("---")
 
