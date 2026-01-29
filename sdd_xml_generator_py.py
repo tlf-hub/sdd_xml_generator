@@ -1,3 +1,11 @@
+"""
+Generatore XML SEPA SDD CBI - sdd_xml_generator_py.py
+Versione: 4.0
+Ultimo aggiornamento: 2025-01-30 02:45:00
+Autore: Assistente AI
+Descrizione: Applicazione Streamlit per generare file XML SEPA SDD in formato CBI
+"""
+
 import streamlit as st
 import csv
 import io
@@ -6,6 +14,10 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
 import re
 import pandas as pd
+
+# Costanti versione
+APP_VERSION = "4.0"
+LAST_UPDATE = "2025-01-30 02:45:00"
 
 # Configurazione pagina
 st.set_page_config(
@@ -100,7 +112,7 @@ def crea_template_aziendale():
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['nome_azienda', 'indirizzo_azienda', 'iban', 'abi', 'creditor_id', 'prefisso_mandato'])
-    writer.writerow(['T.L.F. SRL', 'T.L.F. SRL', 'IT67R0569603211000011001X44', '05696', 'IT610010000006392981004', '9J3073'])
+    writer.writerow(['ESEMPIO SRL', 'Via Esempio 1', 'IT00A0000000000000000000000', '01234', 'IT00ZZZ0000000000000000', 'EXM001'])
     return output.getvalue()
 
 def crea_template_incassi():
@@ -108,12 +120,12 @@ def crea_template_incassi():
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['nome_debitore', 'codice_fiscale', 'iban', 'importo', 'causale', 'data_firma_mandato'])
-    writer.writerow(['Amoruso Gennaro Maria', 'MRSGNR71M29C352M', 'IT13Z0558403204000000008289', '183.00', 
-                    'Fattura 802/1 del 29/12/2025', '02/01/2012'])
-    writer.writerow(['Amoruso Gennaro Maria', 'MRSGNR71M29C352M', 'IT13Z0558403204000000008289', '50.00', 
-                    'Fattura 803/1 del 29/12/2025', '02/01/2012'])
-    writer.writerow(['Arnone Gianluca', 'RNNGLC74C25C352J', 'IT45V0306942774100000005029', '116.91', 
-                    'Fattura 805/1 del 29/12/2025', '05/03/2014'])
+    writer.writerow(['Mario Rossi', 'RSSMRA80A01H501U', 'IT00B0000000000000000000001', '100.00', 
+                    'Fattura 001/2025 del 15/01/2025', '15/01/2024'])
+    writer.writerow(['Mario Rossi', 'RSSMRA80A01H501U', 'IT00B0000000000000000000001', '50.00', 
+                    'Fattura 002/2025 del 20/01/2025', '15/01/2024'])
+    writer.writerow(['Laura Bianchi', 'BNCLRA85M45F205K', 'IT00C0000000000000000000002', '150.50', 
+                    'Abbonamento annuale 2025', '10/02/2024'])
     return output.getvalue()
 
 def valida_dati_aziendali(df):
@@ -344,6 +356,7 @@ def genera_xml_cbi(dati_aziendali, incassi, data_addebito, id_flusso):
 
 # UI principale
 st.title("💰 Generatore XML SEPA SDD CBI per Incassi Bancari")
+st.caption(f"Versione {APP_VERSION} | Ultimo aggiornamento: {LAST_UPDATE}")
 st.markdown("---")
 
 # STEP 1: Dati Aziendali
@@ -594,7 +607,7 @@ st.info("ℹ️ Il file XML generato è compatibile con il formato CBI (Corporat
 
 # Footer
 st.markdown("---")
-st.caption("Generatore XML SEPA SDD CBI v3.0 | Formato: CBIBdySDDReq.00.01.00 | Aggregazione automatica debitori"), id_flusso_input):
+st.caption(f"Generatore XML SEPA SDD CBI v{APP_VERSION} | Formato: CBIBdySDDReq.00.01.00 | Aggregazione automatica debitori | Ultimo aggiornamento: {LAST_UPDATE}"), id_flusso_input):
         st.warning("⚠️ L'ID Flusso dovrebbe contenere solo lettere maiuscole e numeri")
         st.session_state.id_flusso = id_flusso_input
         st.info(f"✅ ID Flusso impostato: {st.session_state.id_flusso}")
